@@ -76,7 +76,8 @@ function beam_install()
 	    `up_to_date` BOOLEAN NOT NULL,
 	    `bucket_url` TEXT,
 	    `bucket_history_url` TEXT,
-	    INDEX (`item_id`)
+	    INDEX (`item_id`),
+	    PRIMARY KEY (`id`)
    ) ENGINE=MyISAM  DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci";
     $db->query($sql);
 }
@@ -95,6 +96,11 @@ function beam_uninstall()
 	delete_option('access_key');
 	delete_option('secret_key');
 	delete_option('bucket_prefix');
+
+    // Drop the table created during installation.
+    $db = get_db();
+    $sql = "DROP TABLE IF EXISTS `{$db->prefix}InternetArchiveFile`";
+    $db->query($sql);
 }
 /**
  * Displays configuration form 
