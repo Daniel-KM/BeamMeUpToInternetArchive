@@ -1,7 +1,7 @@
 <?php
 
-$head = array('body_class' => 'beammeup primary', 
-              'title'      => 'Beam Me Up!');
+$head = array('body_class' => 'beammeup primary',
+            'title'      => 'Beam Me Up!');
 head($head);
 ?>
 
@@ -10,8 +10,8 @@ head($head);
 <div id="primary">
 
 <?php echo flash(); ?>
-    
-	<p>Status of items recently beamed to the Internet Archive</p>
+
+    <p>Status of items recently beamed to the Internet Archive</p>
 
 </div>
 

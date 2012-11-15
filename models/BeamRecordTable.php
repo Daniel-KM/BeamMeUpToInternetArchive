@@ -12,10 +12,9 @@
  */
 class OaipmhHarvesterRecordTable extends Omeka_Db_Table
 {
-    
     /**
      * Return records by item ID.
-     * 
+     *
      * @param mixes $itemId Item ID
      * @return OaipmhHarvesterRecord Record corresponding to item id.
      */
