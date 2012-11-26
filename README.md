@@ -197,7 +197,7 @@ Copyright
 
 [1]: http://www.omeka.org "Omeka.org"
 [2]: http://archive.org "Internet Archive"
-[3]: https://github.com/Daniel-KM/BeamMeUp/Issues "GitHub BeamMeUp"
+[3]: https://github.com/popuparchive/BeamMeUp/Issues "GitHub BeamMeUp"
 [4]: http://www.cecill.info/licences/Licence_CeCILL_V2-en.html "CeCILL"
 [5]: https://www.gnu.org/licenses/gpl-3.0.html "GNU/GPL"
 [6]: http://github.com/Daniel-KM "Daniel Berthereau"
