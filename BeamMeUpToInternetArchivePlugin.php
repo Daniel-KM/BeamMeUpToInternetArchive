@@ -8,21 +8,23 @@
  * @copyright Daniel Vizzini and Dave Lester for Pop Up Archive, 2012
  * @license http://www.cecill.info/licences/Licence_CeCILL_V2-en.txt
  * @license http://www.gnu.org/licenses/gpl-3.0.txt
- * @package BeamMeUp
+ * @package BeamMeUpToInternetArchive
  */
 
 /**
  * Contains code used to integrate the plugin into Omeka.
  *
- * @package BeamMeUp
+ * @package BeamMeUpToInternetArchive
  */
 
-class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
+class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
 {
+    /**
+     * @var array This plugin's hooks.
+     */
     protected $_hooks = array(
         'install',
         'uninstall',
-        'upgrade',
         'config_form',
         'config',
         'after_save_item',
@@ -31,18 +33,24 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
         'admin_items_form_files',
     );
 
+    /**
+     * @var array This plugin's filters.
+     */
     protected $_filters = array(
         'admin_items_form_tabs',
     );
 
+    /**
+     * @var array This plugin's options.
+     */
     protected $_options = array(
-        'beam_post_to_internet_archive' => true,
-        'beam_index_at_internet_archive' => true,
-        'beam_S3_access_key' => 'Enter S3 access key here',
-        'beam_S3_secret_key' => 'Enter S3 secret key here',
-        'beam_collection_name' => 'Please contact the Internet Archive',
-        'beam_media_type' =>  'Please contact the Internet Archive',
-        'beam_bucket_prefix' => 'omeka',
+        'beamia_post_to_internet_archive' => true,
+        'beamia_index_at_internet_archive' => true,
+        'beamia_S3_access_key' => 'Enter S3 access key here',
+        'beamia_S3_secret_key' => 'Enter S3 secret key here',
+        'beamia_collection_name' => 'Please contact the Internet Archive',
+        'beamia_media_type' =>  'Please contact the Internet Archive',
+        'beamia_bucket_prefix' => 'omeka',
     );
 
     /**
@@ -51,14 +59,16 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
     public function hookInstall()
     {
         // Set default bucket prefix: omeka_SERVERNAME.
-        $bucketPrefix = get_plugin_ini('BeamMeUp', 'beam_bucket_prefix');
+        $bucketPrefix = get_plugin_ini('BeamMeUpToInternetArchive', 'beamia_bucket_prefix');
         if (empty($bucketPrefix)) {
             $bucketPrefix = str_replace('.', '_', preg_replace('/www/', '', $_SERVER['SERVER_NAME'], 1));
             $bucketPrefix = 'omeka' . ((strpos($bucketPrefix, '_') == 0) ? '' : '_') . $bucketPrefix;
         }
-        $this->_options['beam_bucket_prefix'] = $bucketPrefix;
+        $this->_options['beamia_bucket_prefix'] = $bucketPrefix;
 
         $this->_installOptions();
+
+        $this->_installTable();
     }
 
     /**
@@ -67,25 +77,9 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
     public function hookUninstall()
     {
         $this->_uninstallOptions();
-    }
 
-    /**
-     * Upgrades the plugin.
-     */
-    public function hookUpgrade($args)
-    {
-        $oldVersion = $args['old_version'];
-        $newVersion = $args['new_version'];
-
-        switch ($oldVersion) {
-            case '0.1':
-            case '0.2':
-                if ($newVersion == '0.2') {
-                    // Drop the table created in 0.1 if it exists.
-                    $sql = "DROP TABLE IF EXISTS `{$this->_db->prefix}internet_archive_files`";
-                    $this->_db->query($sql);
-                }
-        }
+        $sql = "DROP TABLE IF EXISTS `{$this->_db->Beammeup_Internetarchive}`;";
+        $this->_db->query($sql);
     }
 
     /**
@@ -105,12 +99,12 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookConfig()
     {
-        set_option('beam_post_to_internet_archive', $_POST['BeamPostToInternetArchive']);
-        set_option('beam_index_at_internet_archive', $_POST['BeamIndexAtInternetArchive']);
-        set_option('beam_S3_access_key', $_POST['BeamS3AccessKey']);
-        set_option('beam_S3_secret_key', $_POST['BeamS3SecretKey']);
-        set_option('beam_collection_name', $_POST['BeamCollectionName']);
-        set_option('beam_media_type', $_POST['BeamMediaType']);
+        set_option('beamia_post_to_internet_archive', $_POST['BeamiaPostToInternetArchive']);
+        set_option('beamia_index_at_internet_archive', $_POST['BeamiaIndexAtInternetArchive']);
+        set_option('beamia_S3_access_key', $_POST['BeamiaS3AccessKey']);
+        set_option('beamia_S3_secret_key', $_POST['BeamiaS3SecretKey']);
+        set_option('beamia_collection_name', $_POST['BeamiaCollectionName']);
+        set_option('beamia_media_type', $_POST['BeamiaMediaType']);
     }
 
     /**
@@ -123,7 +117,7 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookAfterSaveItem($args)
     {
-        if ($_POST['BeamPostToInternetArchive'] == '1') {
+        if ($_POST['BeamiaPostToInternetArchive'] == '1') {
             $item = $args['record'];
 
             // Beam up files only if there are files. 
@@ -137,10 +131,10 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
                 // Prepare and run job for this item.
                 $jobDispatcher = Zend_Registry::get('bootstrap')->getResource('jobs');
                 // TODO Currently, long running jobs don't allow curl.
-                // $jobDispatcher->setQueueNameLongRunning('beam_uploads');
-                // $jobDispatcher->sendLongRunning('Job_BeamUpload', array(
-                $jobDispatcher->setQueueName('beam_uploads');
-                $jobDispatcher->send('Job_BeamUpload', array(
+                // $jobDispatcher->setQueueNameLongRunning('beamia_uploads');
+                // $jobDispatcher->sendLongRunning('Job_BeamUploadInternetArchive', array(
+                $jobDispatcher->setQueueName('beamia_uploads');
+                $jobDispatcher->send('Job_BeamUploadInternetArchive', array(
                     'itemId' => $item->id,
                     'files' => $files,
                 ));
@@ -174,11 +168,11 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookAdminItemsFormFiles($args) {
         echo '<div class="field">';
-        echo   '<div id="BeamPostToInternetArchive_label" class="one columns alpha">';
-        echo     get_view()->formLabel('BeamPostToInternetArchive', __('Upload to Internet Archive'));
+        echo   '<div id="BeamiaPostToInternetArchive_label" class="one columns alpha">';
+        echo     get_view()->formLabel('BeamiaPostToInternetArchive', __('Upload to Internet Archive'));
         echo   '</div>';
         echo   '<div class="inputs">';
-        echo     get_view()->formCheckbox('BeamPostToInternetArchive', true, array('checked' => (boolean) get_option('beam_post_to_internet_archive')));
+        echo     get_view()->formCheckbox('BeamiaPostToInternetArchive', true, array('checked' => (boolean) get_option('beamia_post_to_internet_archive')));
         echo     '<p class="explanation">';
         echo       __('Note that if this box is checked, saving the item may take a while.');
         echo     '</p>';
@@ -186,11 +180,11 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
         echo '</div>';
 
         echo '<div class="field">';
-        echo   '<div id="BeamIndexAtInternetArchive_label" class="one columns alpha">';
-        echo     get_view()->formLabel('BeamIndexAtInternetArchive', __('Index at Internet Archive'));
+        echo   '<div id="BeamiaIndexAtInternetArchive_label" class="one columns alpha">';
+        echo     get_view()->formLabel('BeamiaIndexAtInternetArchive', __('Index at Internet Archive'));
         echo   '</div>';
         echo   '<div class="inputs">';
-        echo     get_view()->formCheckbox('BeamIndexAtInternetArchive', true, array('checked' => (boolean) get_option('beam_index_at_internet_archive')));
+        echo     get_view()->formCheckbox('BeamiaIndexAtInternetArchive', true, array('checked' => (boolean) get_option('beamia_index_at_internet_archive')));
         echo     '<p class="explanation">';
         echo       __("If you index your items, they will appear on the results of search engines such as Google's.");
         echo     '</p>';
@@ -205,18 +199,8 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function filterAdminItemsFormTabs($tabs)
     {
-        // Insert the map tab before the Miscellaneous tab.
         $item = get_current_record('item');
-        $ttabs = array();
-        foreach ($tabs as $key => $html) {
-            if ($key == 'Miscellaneous') {
-                $ht = '';
-                $ht .= $this->_beam_form($item);
-                $ttabs['Beam me up to Internet Archive'] = $ht;
-            }
-            $ttabs[$key] = $html;
-        }
-        $tabs = $ttabs;
+        $tabs['Beam me up to Internet Archive'] = $this->_beamia_form($item);
         return $tabs;
     }
 
@@ -225,7 +209,7 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      *
      * @return void
      */
-    private function _beam_form($item)
+    private function _beamia_form($item)
     {
         $ht = '';
         ob_start();
@@ -255,21 +239,45 @@ class BeamMeUpPlugin extends Omeka_Plugin_AbstractPlugin
      */
     private function _listInternetArchiveLinks()
     {
-        return '<div>' . __('If you uploaded the files and the Internet Archive has fully processed them, you can view them <strong><a href="http://archive.org/details/' . beamGetBucketName() . '" target="_blank">here</a></strong>') . '</div>'
+        return '<div>' . __('If you uploaded the files and the Internet Archive has fully processed them, you can view them <strong><a href="http://archive.org/details/' . beamiaGetBucketName() . '" target="_blank">here</a></strong>') . '</div>'
             . '<br />'
-            . '<div>' . __("You can view the upload's Internet Archive history and progress <strong><a href=\"http://archive.org/catalog.php?history=1&identifier=" . beamGetBucketName() . '" target="_blank">here</a></strong>.') . '</div>'
+            . '<div>' . __("You can view the upload's Internet Archive history and progress <strong><a href=\"http://archive.org/catalog.php?history=1&identifier=" . beamiaGetBucketName() . '" target="_blank">here</a></strong>.') . '</div>'
             . '<br />';
+    }
+
+    /**
+     * @return void
+     */
+    private function _installTable()
+    {
+        $sql = "
+            CREATE TABLE IF NOT EXISTS `{$this->_db->Beammeup_Internetarchive}` (
+              `id` int unsigned NOT NULL auto_increment,
+              `record_id` int unsigned NOT NULL,
+              `record_type` varchar(50) NOT NULL,
+              `beammeup` tinyint NOT NULL,
+              `is_public` tinyint NOT NULL,
+              `settings` text collate utf8_unicode_ci NOT NULL,
+              `identifier` varchar(256),
+              `status` varchar(255) collate utf8_unicode_ci,
+              `infos` text collate utf8_unicode_ci NOT NULL,
+              `checked` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+              PRIMARY KEY  (`id`),
+              KEY `record_type_record_id` (`record_type`, `record_id`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;
+        ";
+        $this->_db->query($sql);
     }
 }
 
 /**
  * @return bucket name for Omeka Item
  */
-function beamGetBucketName($identifier = '')
+function beamiaGetBucketName($identifier = '')
 {
     if (empty($identifier)) {
         $item = get_current_record('item');
         $identifier = $item->id;
     }
-    return get_option('beam_bucket_prefix') . '_' . $identifier;
+    return get_option('beamia_bucket_prefix') . '_' . $identifier;
 }

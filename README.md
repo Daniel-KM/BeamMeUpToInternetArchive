@@ -2,9 +2,9 @@ Beam me up to Internet Archive (plugin for Omeka)
 =================================================
 
 
-This is but one plugin of two in active developement. This git repo is not where
-the active working code resides, but I will push here as major bits of progress
-are made. See below for a project synopsis.
+This is but one plugin of two in active developement: 
+* Beam me up to Internet Archive
+* Beam me up to SoundCloud
 
 
 Pop-up Radio
@@ -105,7 +105,7 @@ non-uploaded files, can be run from this same page.
 Installation
 ------------
 
-Uncompress files and rename plugin folder "BeamMeUp".
+Uncompress files and rename plugin folder "BeamMeUpToInternetArchive".
 
 Change the bucket prefix in the "plugin.ini" file.
 Bucket prefix is used to build the url of each item you beam up to Internet
@@ -191,13 +191,12 @@ Copyright
 ---------
 
 * Copyright Daniel Vizzini for Pop Up Archive, 2012
-* Copyright Dave Lester for Pop Up Archive, 2012
 * Copyright Daniel Berthereau for Pop Up Archive, 2012
 
 
 [1]: http://www.omeka.org "Omeka.org"
 [2]: http://archive.org "Internet Archive"
-[3]: https://github.com/popuparchive/BeamMeUp/Issues "GitHub BeamMeUp"
+[3]: https://github.com/popuparchive/BeamMeUpToInternetArchive/Issues "GitHub BeamMeUpToInternetArchive"
 [4]: http://www.cecill.info/licences/Licence_CeCILL_V2-en.html "CeCILL"
 [5]: https://www.gnu.org/licenses/gpl-3.0.html "GNU/GPL"
 [6]: http://github.com/Daniel-KM "Daniel Berthereau"

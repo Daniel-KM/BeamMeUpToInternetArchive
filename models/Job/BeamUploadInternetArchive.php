@@ -3,7 +3,7 @@
 /**
  * @todo Use ZendS3?
  */
-class Job_BeamUpload extends Omeka_Job_AbstractJob
+class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 {
     private $_item;
 
@@ -14,11 +14,12 @@ class Job_BeamUpload extends Omeka_Job_AbstractJob
     {
         $this->_item = get_record_by_id('item', $this->_options['itemId']); 
         $this->_files = $this->_options['files'];
+        $files = $this->_item->getFiles();
 
         $curl = $this->_getMetadataCurlObject(true);
         curl_exec($curl);
 
-        while (preg_replace('/\s/', '', file_get_contents('http://archive.org/metadata/' . beamGetBucketName($this->_item->id))) == '{}') {
+        while (preg_replace('/\s/', '', file_get_contents('http://archive.org/metadata/' . beamiaGetBucketName($this->_item->id))) == '{}') {
             usleep(1000);
         }
 
@@ -26,7 +27,6 @@ class Job_BeamUpload extends Omeka_Job_AbstractJob
         $curlMultiHandle = curl_multi_init();
 
         $curls = array();
-        $files = $this->_item->getFiles();
         foreach ($files as $file) {
             if (in_array($file->id, $this->_files)) {
                 $curl = $this->_getFileCurlObject(true, $file);
@@ -62,25 +62,25 @@ class Job_BeamUpload extends Omeka_Job_AbstractJob
             curl_setopt($cURL, CURLOPT_HTTPHEADER, array(
                 'x-amz-auto-make-bucket:1',
                 //TODO: which works?
-                'x-archive-metadata-collection:' . get_option('beam_collection_name'),
-                'x-archive-meta-collection:' . get_option('beam_collection_name'),
-                'x-archive-meta-mediatype:' . get_option('beam_media_type'),
+                'x-archive-metadata-collection:' . get_option('beamia_collection_name'),
+                'x-archive-meta-collection:' . get_option('beamia_collection_name'),
+                'x-archive-meta-mediatype:' . get_option('beamia_media_type'),
                 'x-archive-meta-title:' . $title,
-                'x-archive-meta-noindex:' . (($_POST['BeamIndexAtInternetArchive'] == '1') ? '0' : '1'),
+                'x-archive-meta-noindex:' . (($_POST['BeamiaIndexAtInternetArchive'] == '1') ? '0' : '1'),
                 'x-archive-meta-creator:' . preg_replace('/www/', '', $_SERVER["SERVER_NAME"], 1),
-                'authorization: LOW ' . get_option('beam_S3_access_key') . ':' . get_option('beam_S3_secret_key'),
+                'authorization: LOW ' . get_option('beamia_S3_access_key') . ':' . get_option('beamia_S3_secret_key'),
             ));
         }
         else {
             curl_setopt($cURL, CURLOPT_HTTPHEADER, array(
                 //TODO: which works?
-                'x-archive-metadata-collection:' . get_option('beam_collection_name'),
-                'x-archive-meta-collection:' . get_option('beam_collection_name'),
-                'x-archive-meta-mediatype:' . get_option('beam_media_type'),
+                'x-archive-metadata-collection:' . get_option('beamia_collection_name'),
+                'x-archive-meta-collection:' . get_option('beamia_collection_name'),
+                'x-archive-meta-mediatype:' . get_option('beamia_media_type'),
                 'x-archive-meta-title:' . $title,
-                'x-archive-meta-noindex:' . (($_POST['BeamIndexAtInternetArchive'] == '1') ? '0' : '1'),
+                'x-archive-meta-noindex:' . (($_POST['BeamiaIndexAtInternetArchive'] == '1') ? '0' : '1'),
                 'x-archive-meta-creator:' . preg_replace('/www/', '', $_SERVER["SERVER_NAME"], 1),
-                'authorization: LOW ' . get_option('beam_S3_access_key') . ':' . get_option('beam_S3_secret_key'),
+                'authorization: LOW ' . get_option('beamia_S3_access_key') . ':' . get_option('beamia_S3_secret_key'),
             ));
         }
 
@@ -104,7 +104,7 @@ class Job_BeamUpload extends Omeka_Job_AbstractJob
         fwrite($fp, $body);
         fseek($fp, 0);
 
-        curl_setopt($cURL, CURLOPT_URL, 'http://s3.us.archive.org/' . beamGetBucketName($this->_item->id) . '/metadata.html');
+        curl_setopt($cURL, CURLOPT_URL, 'http://s3.us.archive.org/' . beamiaGetBucketName($this->_item->id) . '/metadata.html');
         curl_setopt($cURL, CURLOPT_BINARYTRANSFER, true);
         curl_setopt($cURL, CURLOPT_INFILE, $fp); // file pointer
         curl_setopt($cURL, CURLOPT_INFILESIZE, strlen($body));
@@ -124,7 +124,7 @@ class Job_BeamUpload extends Omeka_Job_AbstractJob
         // Open this directory.
         //TODO Test with hyphen, apostrophe, etc.
         $originalFilename = preg_replace('/&#\d+;/', '_', htmlspecialchars(preg_replace('/\s/', '_', $fileToBePut->original_filename), ENT_QUOTES));
-        curl_setopt($cURL, CURLOPT_URL, 'http://s3.us.archive.org/' . beamGetBucketName($this->_item->id) . '/' . $originalFilename);
+        curl_setopt($cURL, CURLOPT_URL, 'http://s3.us.archive.org/' . beamiaGetBucketName($this->_item->id) . '/' . $originalFilename);
         curl_setopt($cURL, CURLOPT_INFILE, fopen(FILES_DIR . '/original/' . $fileToBePut->filename, 'r'));
         curl_setopt($cURL, CURLOPT_INFILESIZE, $fileToBePut->size);
 
