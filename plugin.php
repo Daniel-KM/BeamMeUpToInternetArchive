@@ -1,16 +1,14 @@
 <?php
 /**
+ * Posts items to the Internet Archive as they are saved.
+ *
+ * @see README.md
+ * 
  * @copyright Daniel Berthereau for Pop Up Archive, 2012
  * @copyright Daniel Vizzini and Dave Lester for Pop Up Archive, 2012
  * @license http://www.cecill.info/licences/Licence_CeCILL_V2-en.txt
  * @license http://www.gnu.org/licenses/gpl-3.0.txt
  * @package BeamMeUp
- */
-
-/**
- * Posts items to the Internet Archive as they are saved.
- *
- * @see README.md
  */
 
 /**
@@ -27,7 +25,7 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
         'upgrade',
         'config_form',
         'config',
-        'after_save_item', // The main one.
+        'after_save_item',
         'admin_theme_header',
         'admin_append_to_items_show_secondary',
         'admin_append_to_items_form_files',
@@ -77,23 +75,44 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
         }
     }
 
+    /**
+     * Upgrades the plugin.
+     */
     public function hookUpgrade($oldVersion, $newVersion)
     {
-        $db = get_db();
         switch ($oldVersion) {
             case '0.1':
             case '0.2':
-                if ($newVersion == '0.2') {
-                    // Drop the table created in 0.1 if it exists.
-                    $db = get_db();
-                    $sql = "DROP TABLE IF EXISTS `{$db->prefix}internet_archive_files`";
-                    $db->query($sql);
-                }
+                // Drop the table created in 0.1 if it exists.
+                $db = get_db();
+                $sql = "DROP TABLE IF EXISTS `{$db->prefix}internet_archive_files`";
+                $db->query($sql);
+
+                // Drop the table created in 0.1 if it exists.
+                $sql = "DROP TABLE IF EXISTS `{$this->_db->prefix}internet_archive_files`";
+                $this->_db->query($sql);
+
+                set_option('beam_post_to_internet_archive', get_option('post_to_internet_archive_default_bool'));
+                set_option('beam_index_at_internet_archive', get_option('index_at_internet_archive_default_bool'));
+                set_option('beam_S3_access_key', get_option('access_key'));
+                set_option('beam_S3_secret_key', get_option('secret_key'));
+                set_option('beam_collection_name', get_option('collection_name'));
+                set_option('beam_media_type', get_option('media_type'));
+                set_option('beam_bucket_prefix', get_option('bucket_prefix'));
+
+                delete_option('post_to_internet_archive_default_bool');
+                delete_option('index_at_internet_archive_default_bool');
+                delete_option('access_key');
+                delete_option('secret_key');
+                delete_option('collection_name');
+                delete_option('media_type');
+                delete_option('bucket_prefix');
         }
     }
 
     /**
      * Displays configuration form.
+     *
      * @return void
      */
     public function hookConfigForm()
@@ -119,23 +138,33 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
 
     /**
      * Post Files and metadata of an Omeka Item to the Internet Archive.
+     *
+     * The process occurs only when all files are saved, at the end of the
+     * creation of item.
+     *
      * @return void
      */
     public function hookAfterSaveItem($item)
     {
         if ($_POST['BeamPostToInternetArchive'] == '1') {
-            require_once dirname(__FILE__) . '/functions.php';
+            // Beam up files only if there are files. 
+            if ($item->hasFiles()) {
+                require_once dirname(__FILE__) . '/functions.php';
 
-            // Set item.
-            require_once HELPER_DIR . '/Functions.php';
-            require_once HELPER_DIR . '/ItemFunctions.php';
-            require_once HELPER_DIR . '/StringFunctions.php';
-            set_current_item($item);
+                // Keep only primitive data types of files to be uploaded.
+                $files = $item->getFiles();
+                foreach ($files as $key => $file) {
+                    $files[$key] = $file->id;
+                }
 
-            // Prepare and run job for this item.
-            $jobDispatcher = Zend_Registry::get('job_dispatcher');
-            $jobDispatcher->setQueueName('uploads');
-            $jobDispatcher->send('Beam_Upload_Job', array());
+                // Prepare and run job for this item.
+                $jobDispatcher = Zend_Registry::get('job_dispatcher');
+                $jobDispatcher->setQueueName('beam_uploads');
+                $jobDispatcher->send('Job_BeamUpload', array(
+                    'itemId' => $item->id,
+                    'files' => $files,
+                ));
+            }
         }
     }
 
@@ -147,18 +176,20 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
     }
 
     /**
-     * Displays Internet Archive links in admin/show section
+     * Displays Internet Archive links in admin/show section.
+     *
      * @return void
      */
     public function hookAdminAppendToItemsShowSecondary() {
         echo '<div class="info-panel">';
         echo '<h2>Beam me up to Internet Archive</h2>';
-        echo $this->listInternetArchiveLinks();
+        echo $this->_listInternetArchiveLinks();
         echo '</div>';
     }
 
     /**
-     * Gives user the option to post to the Internet Archive
+     * Gives user the option to post to the Internet Archive.
+     *
      * @return void
      */
     public function hookAdminAppendToItemsFormFiles() {
@@ -172,18 +203,19 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
     }
 
     /**
-     * Add BeamMeUp tab to the edit item page
+     * Add BeamMeUp tab to the edit item page.
+     *
      * @return array
      */
     public function filterAdminItemsFormTabs($tabs)
     {
-        // insert the map tab before the Miscellaneous tab
+        // Insert the map tab before the Miscellaneous tab.
         $item = get_current_item();
         $ttabs = array();
         foreach ($tabs as $key => $html) {
             if ($key == 'Miscellaneous') {
                 $ht = '';
-                $ht .= $this->beam_form($item);
+                $ht .= $this->_beam_form($item);
                 $ttabs['Beam me up to Internet Archive'] = $ht;
             }
             $ttabs[$key] = $html;
@@ -194,9 +226,10 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
 
     /**
      * Each time we save an item, post to the Internet Archive.
+     *
      * @return void
      */
-    private function beam_form($item)
+    private function _beam_form($item)
     {
         $ht = '';
         ob_start();
@@ -212,7 +245,7 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
             echo '<div>' . __('Please revisit this tab after you save the item to view its Internet Archive links.') . '</div>';
         }
         else {
-            echo $this->listInternetArchiveLinks();
+            echo $this->_listInternetArchiveLinks();
         }
 
         $ht .= ob_get_contents();
@@ -224,7 +257,7 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
     /**
      * @return string containing IA links
      */
-    private function listInternetArchiveLinks()
+    private function _listInternetArchiveLinks()
     {
         return '<div>' . __('If you uploaded the files and the Internet Archive has fully processed them, you can view them <strong><a href="http://archive.org/details/' . beamGetBucketName() . '" target="_blank">here</a></strong>') . '</div>'
             . '<br />'
@@ -236,9 +269,13 @@ class BeamMeUpPlugin extends Omeka_Plugin_Abstract
 /**
  * @return bucket name for Omeka Item
  */
-function beamGetBucketName()
+function beamGetBucketName($identifier = '')
 {
-    return get_option('beam_bucket_prefix') . '_' . item('id');
+    if (empty($identifier)) {
+        $item = get_current_item();
+        $identifier = $item->id;
+    }
+    return get_option('beam_bucket_prefix') . '_' . $identifier;
 }
 
 /** Installation of the plugin. */

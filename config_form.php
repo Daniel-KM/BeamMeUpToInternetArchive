@@ -23,15 +23,15 @@
     });
 </script>
 
-<h3><strong><em>Note that if you are uploading to the Internet Archive, saving an item may take a while.</em></strong></h3>
+<h2>Note that if you are uploading to the Internet Archive, saving an item may take a while.</h2>
 
 <div class="field">
     <?php echo __v()->formLabel('BeamPostToInternetArchive', __('Upload to Internet Archive by default'));?>
     <div class="inputs">
         <?php echo __v()->formCheckbox('BeamPostToInternetArchive', true, array('checked' => (boolean) get_option('beam_post_to_internet_archive')));?>
-        <p class="explanation">
-            <?php echo __('You can change this option on a per-item basis.');?>
-        </p>
+        <p class="explanation"><?php echo __(
+            'You can change this option on a per-item basis.'
+        );?></p>
     </div>
 </div>
 <div class="field">
@@ -39,13 +39,13 @@
     <div class="inputs">
         <?php echo __v()->formCheckbox('BeamIndexAtInternetArchive', true, array('checked' => (boolean) get_option('beam_index_at_internet_archive')));?>
         <p class="explanation">
-            <?php echo __("If you index your items, they will appear on the results of search engines such as Google's.") . '<br />';
-            echo __('You can change this option on a per-item basis.');?>
+            <?php echo __("If you index your items, they will appear on the results of search engines such as Google's.");
+            echo ' ' . __('You can change this option on a per-item basis.');?>
         </p>
     </div>
 </div>
-<h3>Please visit <a href="http://www.archive.org/account/s3.php" target="_blank">The Internet Archive's S3 Page</a> to generate the keys below.</h3>
-<h3>Be sure to log in with the account used for your archives.</h3>
+<h2>Please visit <a href="http://www.archive.org/account/s3.php" target="_blank">The Internet Archive's S3 Page</a> to generate the keys below.</h2>
+<p>Be sure to log in with the account used for your archives.</p>
 <div class="field">
     <?php echo __v()->formLabel('BeamS3AccessKey', __('S3 access key'));?>
     <div class="inputs">
@@ -64,7 +64,7 @@
         <?php echo __v()->formText('BeamCollectionName', get_option('beam_collection_name'), null);?>
         <p class="explanation">
             <?php echo __('You must contact <a href="mailto:info@archive.org" >info@archive.org</a> and get an Internet Archive Collection to use this plugin. You can use "test_collection".');
-            echo __('Do not fear. It is free and the Internet Archive is staffed exclusively with friendly and responsive people.');?>
+            echo ' ' . __('Do not fear. It is free and the Internet Archive is staffed exclusively with friendly and responsive people.');?>
         </p>
     </div>
 </div>
@@ -74,7 +74,7 @@
         <?php echo __v()->formText('BeamMediaType', get_option('beam_media_type'), null);?>
         <p class="explanation">
             <?php echo __('Ask the Internet Archive what do put here, for example "texts". They will tell you what to enter here when you get your collection.');
-            echo __('Again, they would love to hear from you so please contact them.');?>
+            echo ' ' . __('Again, they would love to hear from you so please contact them.');?>
         </p>
     </div>
 </div>
@@ -90,8 +90,4 @@
     <br />
     <?php echo __('With the current version of BeamMeUp, you cannot change it once it has been defined and you started to upload items on Internet Archive.');?>
     </p>
-</div>
-<div>
-    <h2><?php echo __('Output Formats'); ?></h2>
-    <?php echo output_format_list(false, ' · '); ?>
 </div>
