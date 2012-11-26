@@ -23,7 +23,7 @@
     });
 </script>
 
-<h4>Note that if you are uploading to the Internet Archive, saving an item may take a while.</h4>
+<h4>Note that if you are uploading to the Internet Archive, saving an item may take a while. Check item page to see progress.</h4>
 
 <div class="field">
     <div id="BeamiaPostToInternetArchive_label" class="one columns alpha">
@@ -77,21 +77,46 @@
     <div class="inputs">
         <?php echo get_view()->formText('BeamiaMediaType', get_option('beamia_media_type'), null);?>
         <p class="explanation">
-            <?php echo __('Ask the Internet Archive what do put here, for example "texts". They will tell you what to enter here when you get your collection.');
-            echo ' ' . __('Again, they would love to hear from you so please contact them.');?>
+            <?php echo __('Ask the Internet Archive what do put here. They will tell you what to enter here when you get your collection.');
+            echo ' ' . __('Again, they would love to hear from you so please contact them.') . "<br />\n";
+            echo __('Main types are: "texts", "movies", "audio" and "education".');?>
         </p>
     </div>
 </div>
-<div>
-    <h2><?php echo __('Bucket prefix') . ': "<em>' . get_option('beamia_bucket_prefix') . '</em>"' ;?></h2>
-    <p>
-    <?php echo __('Bucket prefix is used to build the url of each item you beam up to Internet Archive. The url will be this prefix followed by "_" and the item id.');?>
-    <br />
-    <?php echo __(' You may have changed it in plugin.ini before installation of the plugin.');?>
-    </p>
-    <p>
-    <strong><?php echo __('WARNING:');?></strong>
-    <br />
-    <?php echo __('With the current version of BeamMeUp, you cannot change it once it has been defined and you started to upload items on Internet Archive.');?>
-    </p>
+<div class="field">
+    <?php echo get_view()->formLabel('BeamiaBucketPrefix', __('Bucket prefix'));?>
+    <div class="inputs">
+        <?php echo get_view()->formText('BeamiaBucketPrefix', get_option('beamia_bucket_prefix'), null);?>
+        <p class="explanation">
+            <?php echo __('Bucket prefix is used to build the url of each item you beam up to Internet Archive. The url will be this prefix followed by "_" and the item id.');?>
+        </p>
+    </div>
 </div>
+<div class="field">
+    <div id="BeamiaJobType_label" class="one columns alpha">
+        <?php echo get_view()->formLabel('BeamiaJobType', __('Long running job'));?>
+    </div>
+    <div class="inputs">
+        <?php echo get_view()->formCheckbox('BeamiaJobType', true, array('checked' => (get_option('beamia_job_type') == 'long running')));?>
+        <p class="explanation"><?php echo __(
+            'Check this button if the php-cli of your server supports curl.'
+        );?></p>
+    </div>
+</div>
+<div class="field">
+    <?php echo get_view()->formLabel('BeamiaMaxTimeItem', __('Max time to beam up an item'));?>
+    <div class="inputs">
+        <?php echo get_view()->formText('BeamiaMaxTimeItem', get_option('beamia_max_time_item'), null);?>
+        <p class="explanation">
+            <?php echo __('Maximum time in seconds to check status of an item.');?>
+        </p>
+    </div>
+</div>
+
+<h4>Remarks</h4>
+<ul>
+    <li>Generally, creation of a bucket takes some seconds, but it can be some minutes and even some hours in case of maintenance.</li>
+    <li>Files can't be uploaded as long as bucket creation is not finished. Anyway, they are added in a queue for a background job process.</li>
+    <li>If two files has same original name, the second will overide the first in the bucket.</li>
+    <li>TODO Status is automatically updated when the item view is displayed and after an item is saved or updated.</li>
+</ul>

@@ -2,7 +2,7 @@ Beam me up to Internet Archive (plugin for Omeka)
 =================================================
 
 
-This is but one plugin of two in active developement: 
+This is but one plugin of two in active developement:
 * Beam me up to Internet Archive
 * Beam me up to SoundCloud
 
@@ -106,13 +106,6 @@ Installation
 ------------
 
 Uncompress files and rename plugin folder "BeamMeUpToInternetArchive".
-
-Change the bucket prefix in the "plugin.ini" file.
-Bucket prefix is used to build the url of each item you beam up to Internet
-Archive. The url will be this prefix followed by "_" and the item id.
-
-**Warning**: With the current version of BeamMeUp, you cannot change it once it
-has been defined and you started to upload items on Internet Archive.
 
 Then install it like any other Omeka plugin and follow the config instructions.
 
