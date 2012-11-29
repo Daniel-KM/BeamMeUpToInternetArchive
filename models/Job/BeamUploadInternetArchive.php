@@ -13,88 +13,111 @@
 class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 {
     private $_beams = array();
+    private $_curls = array();
 
     // Beam for current item, beam for current file, current item and file.
     private $_beam_item;
-    private $_beam;
     private $_item;
+
+    private $_beam;
     private $_file;
 
     public function perform()
     {
-        $beam = $this->_beam = $this->_beam_item = get_record_by_id('BeamInternetArchiveBeam', $this->_options['beamItem']);
+        // Remove duplicates beams.
+        $this->_beams = array_combine($this->_options['beams'], $this->_options['beams']);
+        $beam = $this->_beam = $this->_beam_item = get_record_by_id('BeamInternetArchiveBeam', $this->_options['beams']['item']);
         $item = $this->_item = get_record_by_id('item', $this->_beam_item->record_id);
 
         // Insert or update an Internet Archive bucket for the item.
         try {
-            $result = $this->_createBucket();
-        } catch (Exception $e) {
+            if ($this->_createBucket() === false) {
+                // More precisely, the job queue status depends on beam status.
+                return JOB_QUEUE_STATUS_WAITING;
+            };
+        } catch (Exception_BeamInternetArchiveBeam $e) {
             // Status is already updated.
-            throw new Exception(__("Beam me up to Internet Archive: Error during the creation of the bucket for item " . $beam->record_id . ".\n" . $e->getMessage()));
+            _log(__('Beam me up to Internet Archive: Error during the creation of the bucket for item "%s".', $beam->record_id), Zend_Log::WARN);
+            _log($e->getMessage(), Zend_Log::WARN);
+            return JOB_QUEUE_STATUS_LOGICALLY_FAILED;
+        } catch (Exception_BeamInternetArchiveConnect $e) {
+            $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP);
+            _log(__('Beam me up to Internet Archive: Connection error during the creation of the bucket for item "%s".', $beam->record_id), Zend_Log::WARN);
+            _log($e->getMessage(), Zend_Log::WARN);
+            return JOB_QUEUE_STATUS_EXECUTION_FAILED;
         }
 
         // Wait the end of the creation of the bucket before import of files.
         if (!$beam->isRemoteAvailable()) {
             // No error, but wait creation of bucket. Another perform is needed.
-            return;
+            return JOB_QUEUE_STATUS_WAITING;
         }
 
         // Now that bucket is ready, run multi-threaded curl to beam up files.
-        $this->_beams['files'] = $this->_db->getTable('BeamInternetArchiveBeam')->findMultiple($this->_options['beamFiles']);
+        // Beam item will be checked only.
+        unset($this->_options['beams']['item']);
+        $this->_beams = $this->_db->getTable('BeamInternetArchiveBeam')->findMultiple($this->_options['beams']);
+
         $curlMultiHandle = curl_multi_init();
-        // Add only files that are not beamed up yet.
-        $curls = array();
-        foreach ($this->_beams['files'] as $beam) {
+        // Prepare only files that are not beamed up yet.
+        foreach ($this->_beams as $beam) {
+            // Check if beam is ok and not created yet.
+            if (!$beam->isReadyToBeamUp()) {
+                $this->_curls[$beam->id] = 0;
+                continue;
+            }
+
             $this->_beam = $beam;
-            $this->_file = get_record_by_id('File', $beam->record_id);
-            try {
-                $result = $this->_checkBeamFile();
-            } catch (Exception $e) {
-                $beam->saveWithStatus($beam::NO_RECORD);
-                throw new Exception(__("Beam me up to Internet Archive: Error during the upload of file " . $beam->record_id . ".\n" . $e->getMessage()));
-            }
 
-            if ($result === true) {
-                try {
-                    $beam->setIndex(($_POST['BeamiaIndexAtInternetArchive'] == '1') ? $beam::IS_PUBLIC : $beam::IS_PRIVATE);
-                    $beam->setRemoteIdForFile();
-                    $beam->setSettings();
-                } catch (Exception $e) {
-                    throw new Exception("Beam me up to Internet Archive: File " . $this->record_id . " cannot be beamed up." . "\n" . $e->getMessage());
-                }
+            // Prepare content to be uploaded from the record.
+            $this->_file = get_record_by_id($beam->record_type, $beam->record_id);
 
-                $curl = $this->_initializeCurl();
-                curl_setopt($curl, CURLOPT_HTTPHEADER, $this->_getMetadataHeadersForCurl());
-                curl_setopt($curl, CURLOPT_URL, $beam->getUrlForFileToUpload());
-                curl_setopt($curl, CURLOPT_INFILE, fopen(FILES_DIR . '/original/' . $this->_file->filename, 'r'));
-                curl_setopt($curl, CURLOPT_INFILESIZE, $this->_file->size);
+            _log(__('Starting to beam up %s #%d.', $beam->record_type, $beam->record_id), Zend_Log::INFO);
+            $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_IN_PROGRESS);
 
-                $curls[] = $this->_addHandle($curlMultiHandle, $curl);
-                $beam->saveWithStatus($beam::BEAMING_UP);
-            }
+            // Generic option for curl.
+            $curl = $this->_initializeCurl();
+            // Specific option for curl.
+            curl_setopt($curl, CURLOPT_HTTPHEADER, $this->_getMetadataHeadersForCurl());
+            curl_setopt($curl, CURLOPT_URL, $beam->getUrlForFileToUpload());
+            curl_setopt($curl, CURLOPT_INFILE, fopen(FILES_DIR . '/original/' . $this->_file->filename, 'r'));
+            curl_setopt($curl, CURLOPT_INFILESIZE, $this->_file->size);
+            // Add this instance of curl in a multi handle curl.
+            $this->_curls[$beam->id] = $this->_addHandle($curlMultiHandle, $curl);
         }
 
-        // TODO Add a check [remove multihandle to get full progress info!].
+        // Launch multihandle with all curls.
         $result = $this->_execMultiHandle($curlMultiHandle);
 
-        // Remove the handles.
-        foreach ($curls as $curl) {
+        // Check whole result of multihandle.
+        // In fact, the multihandler can't return without success.
+
+        // Check individual results and remove the handles.
+        foreach ($this->_curls as $curl) {
+            $curlGetInfo = curl_getinfo($curl);
+            if (curl_errno($curl)) {
+                $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP);
+                _log(__('Beam me up to Internet Archive: Connection error during the upload of %s #%d.', $beam->record_type, $beam->record_id), Zend_Log::WARN);
+                _log(__('Beam me up to Internet Archive: Upload returns error #%d (%s).', curl_errno($curl), curl_error($curl)), Zend_Log::WARN);
+            }
+            else {
+                $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_REMOTE);
+                _log(__('Finishing to upload %s #%d. Waiting remote status.', $beam->record_type, $beam->record_id), Zend_Log::INFO);
+            }
             curl_multi_remove_handle($curlMultiHandle, $curl);
         }
 
         curl_multi_close($curlMultiHandle);
 
-        // TODO Update local status. Currently, presume good, because bucket
-        // succeed.
-        foreach ($this->_beams['files'] as $beam) {
-            $this->_beam = $beam;
+        foreach ($this->_beams as $beam) {
             // Check remote status updates sending status only for a good beam.
             $beam->checkRemoteStatus();
         }
+        return JOB_QUEUE_STATUS_SUCCESS;
     }
 
     /**
-     * Insert or update an Internet Archive bucket for the item.
+     * Insert an Internet Archive bucket for the item. Check has been done.
      *
      * @todo Check for update.
      * @return boolean True for success or False for failure.
@@ -104,75 +127,47 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         $beam = $this->_beam;
         $item = $this->_item;
 
-        // Check if item still exists.
-        if (!$item) {
-            $beam->saveWithStatus($beam::NO_RECORD);
-            throw new Exception(__("Beam me up to Internet Archive: Item " . $beam->record_id . " doesn't exist."));
+        // Check if beam is ok and not created yet.
+        if (!$beam->isReadyToBeamUp()) {
+            // In fact, the status depends on beam status.
+            return false;
         }
 
-        // Check the current status before trying to create bucket.
-        switch ($beam->status) {
-            case $beam::TO_BEAM_UP_WAITING_BUCKET:
-                // Impossible for item.
-                return false;
-            case $beam::TO_BEAM_UP:
-                break;
-            case $beam::FAILED:
-                // A previous creation of a bucket failed, so try it again.
-                break;
-            case $beam::NO_RECORD:
-                throw new Exception(__("Beam me up to Internet Archive: File " . $beam->record_id . " doesn't exist in a previous check."));
-            case $beam::BEAMING_UP:
-                return false;
-            case $beam::BEAMED_UP_WAITING_BUCKET_CREATION:
-                // Need to wait end of creation of the bucket.
-                return false;
-            case $beam::BEAMED_UP_WAITING_REMOTE:
-                // Ready to upload something else.
-            case $beam::BEAMED_UP:
-                return true;
-            default:
-                return false;
-        }
-
-        // Beam is ok and not created yet.
-        // Content are metadata.
+        // Prepare content to be uploaded.
+        // Content are metadata of item.
         $content = all_element_texts($item, array('show_empty_elements' => true));
-
         try {
             $filePointer = $this->_prepareFileFromItem($content);
-        } catch (Exception $e) {
-            $beam->saveWithStatus($beam::FAILED);
-            throw new Exception($e->getMessage());
+        } catch (Exception_BeamInternetArchiveConnect $e) {
+            $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP);
+            throw new Exception_BeamInternetArchiveConnect($e->getMessage());
         }
 
-        // Beam and content are ok, so fill beam and prepare the bucket.
-        $beam->setIndex(($_POST['BeamiaIndexAtInternetArchive'] == '1') ? $beam::IS_PUBLIC : $beam::IS_PRIVATE);
-        $beam->setRemoteIdForItem();
-        $beam->setSettings();
-
         // Beam item up.
+        $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_IN_PROGRESS);
+        _log(__('Starting to beam up %s #%d.', $beam->record_type, $beam->record_id), Zend_Log::INFO);
         try {
+            // Generic option for curl.
             $curl = $this->_initializeCurl();
-
-            // Old note kept for information about http header.
-            // Note that curl_setopt does not seem to work with predefined arrays,
-            // which is a real deterent to good code.
+            // Specific option for curl.
             curl_setopt($curl, CURLOPT_HTTPHEADER, $this->_getMetadataHeadersForCurl(true));
             curl_setopt($curl, CURLOPT_URL, $beam->getUrlForMetadataToUpload());
             curl_setopt($curl, CURLOPT_INFILE, $filePointer);
             curl_setopt($curl, CURLOPT_INFILESIZE, strlen($content));
-
-            $beam->saveWithStatus($beam::BEAMING_UP);
+            // Run a single instance of curl, because it's the bucket.
             $curlInfo = $this->_execSingleHandle($curl);
-        } catch (Exception $e) {
+        } catch (Exception_BeamInternetArchiveBeam $e) {
             curl_close($curl);
-            $beam->saveWithStatus($beam::FAILED);
-            throw new Exception($e->getMessage() . ' (item: ' . $beam->record_id . ')');
+            // Status is already updated.
+            throw new Exception_BeamInternetArchiveBeam($e->getMessage());
+        } catch (Exception_BeamInternetArchiveConnect $e) {
+            curl_close($curl);
+            $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP);
+            throw new Exception_BeamInternetArchiveConnect($e->getMessage());
         }
+        $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_BUCKET_CREATION);
+        _log(__('Finishing to upload item #%d. Waiting remote status for bucket creation.', $item->id), Zend_Log::INFO);
         curl_close($curl);
-
-        return true;
     }
 
     /**
@@ -187,7 +182,8 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         // Use a max of 256KB of RAM before going to disk.
         $filePointer = fopen('php://temp/maxmemory:256000', 'w'); // File pointer.
         if (!$filePointer) {
-            throw new Exception(__('Upload to Internet Archive aborted: Could not open temp memory data.'), 1);
+            // Not really a connect exception, but similar (not logical error).
+            throw new Exception_BeamInternetArchiveConnect(__('Upload to Internet Archive aborted: Could not open temp memory data.'));
         }
         fwrite($filePointer, $content);
         fseek($filePointer, 0);
@@ -199,57 +195,6 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
      *
      * @return boolean True for success or False for failure.
      */
-    private function _checkBeamFile()
-    {
-        $beam = $this->_beam;
-
-        // Check if file still exists.
-        if (!$this->_file) {
-            $beam->saveWithStatus($beam::NO_RECORD);
-            throw new Exception(__("Beam me up to Internet Archive: File " . $beam->record_id . " doesn't exist."));
-        }
-
-        // Check if bucket for the item is created.
-        $beamItem = $this->_beam_item;
-        if (empty($beam->required_beam_id) || $beam->required_beam_id == '0') {
-            throw new Exception(__("Beam me up to Internet Archive: File " . $beam->record_id . " can't be beamed up while parent item is not created."));
-        }
-        if (!$beamItem) {
-            throw new Exception(__("Beam me up to Internet Archive: File " . $beam->record_id . " need a beam for the parent item before it can be uploaded."));
-        }
-        if (!$beamItem->isBeamedUpOrWaiting()) {
-            $beam->saveWithStatus($beam::TO_BEAM_UP_WAITING_BUCKET);
-            return false;
-        }
-
-        // Check the current status.
-        switch ($beam->status) {
-            case $beam::TO_BEAM_UP_WAITING_BUCKET:
-                $beam->saveWithStatus($beam::TO_BEAM_UP);
-                return true;
-            case $beam::TO_BEAM_UP:
-                return true;
-            case $beam::FAILED:
-                // A previous creation of a bucket failed, so try it again.
-                return true;
-            case $beam::NO_RECORD:
-                throw new Exception(__("Beam me up to Internet Archive: File " . $beam->record_id . " doesn't exist in a previous check."));
-            case $beam::BEAMING_UP:
-                // Need a remote status (checked later).
-                return false;
-            case $beam::BEAMED_UP_WAITING_BUCKET_CREATION:
-                // Need to wait end of creation of the bucket.
-                // This status is only for item, because we don't send file
-                // before end of bucket creation.
-                return false;
-            case $beam::BEAMED_UP_WAITING_REMOTE:
-            case $beam::BEAMED_UP:
-                return false;
-            default:
-                return false;
-        }
-    }
-
     private function _initializeCurl()
     {
         $curl = curl_init();
@@ -319,8 +264,12 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
     private function _execSingleHandle($curl)
     {
         $result = curl_exec($curl);
+        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         if (curl_errno($curl) || $result === false) {
-            throw new Exception(__('Beam me up to Internet Archive: Upload returns error "' . curl_errno($curl) . ' (' . curl_error($curl) . ')".'));
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Upload returns error #%d (%s).', curl_errno($curl), curl_error($curl)));
+        }
+        if ($httpCode != 200) {
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Unable to upload item (error http #%d). Check your proxy or your server.', $httpCode));
         }
         return curl_getinfo($curl);
     }
@@ -329,6 +278,9 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
      * Executes the curl multi handle until there are no outstanding jobs.
      *
      * @return void
+     *
+     * @todo progress info.
+     * @todo limit number of parallel upload.
      */
     private function _execMultiHandle(&$curlMultiHandle)
     {

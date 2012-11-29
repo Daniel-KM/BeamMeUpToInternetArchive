@@ -7,38 +7,39 @@
  */
 class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
 {
+    const BASE_URL_CHECK = 'http://archive.org';
     const BASE_URL_ARCHIVE = 'http://s3.us.archive.org/';
     const BASE_URL_METADATA = 'http://archive.org/metadata/';
     const BASE_URL_DETAILS = 'http://archive.org/details/';
     const BASE_URL_TASKS = 'http://archive.org/catalog.php?history=1&identifier=';
 
     // All possible status for a beam.
-    const TO_BEAM_UP = 'to beam up';
+    const STATUS_TO_BEAM_UP = 'to beam up';
     // This status is only for file.
-    const TO_BEAM_UP_WAITING_BUCKET = 'to beam up after bucket creation';
-    const BEAMING_UP = 'processing beam up';
+    const STATUS_TO_BEAM_UP_WAITING_BUCKET = 'to beam up after bucket creation';
+    const STATUS_IN_PROGRESS = 'beam up in progress';
+    const STATUS_FAILED_TO_BEAM_UP = 'failed to beam up';
     // After upload of a file, Internet Archive needs some time to integrate it.
-    const BEAMED_UP_WAITING_BUCKET_CREATION = 'waiting remote bucket creation';
-    // As the request of creation was successful, other commands are possible.
-    const BEAMED_UP_WAITING_REMOTE = 'waiting remote processing';
-    const BEAMED_UP = 'beamed up';
-    const FAILED = 'failed';
-    const NO_RECORD = 'no record';
+    const STATUS_COMPLETED_WAITING_BUCKET_CREATION = 'waiting remote bucket creation';
+    const STATUS_COMPLETED_WAITING_REMOTE = 'waiting remote processing';
+    const STATUS_COMPLETED = 'beamed up';
+    const STATUS_NO_RECORD = 'no record';
+    const STATUS_ERROR = 'error in record';
     // TODO In a future release.
-    const TO_UPDATE = 'to update';
-    const UPDATING = 'processing update';
-    const UPDATED = 'updated';
+    const STATUS_TO_UPDATE = 'to update';
+    const STATUS_UPDATING = 'processing update';
     // TODO In a future release.
-    // Note: Delete is not allowed on Internet Archive.
-    const TO_DELETE = 'to delete';
-    const DELETING = 'processing delete';
-    const DELETED = 'deleted';
+    // Note: To delete a bucket is not allowed on Internet Archive.
+    const STATUS_TO_DELETE = 'to delete';
+    const STATUS_DELETING = 'processing delete';
+    const STATUS_DELETED = 'deleted';
 
     // All possible remote status.
+    const REMOTE_NOT_TO_CHECK = 'N/A';
     const REMOTE_CHECK_FAILED = 'check failed';
     const REMOTE_NO_BUCKET = 'no bucket';
-    const REMOTE_PROCESSING_BUCKET_CREATION = 'processing bucket creation';
-    const REMOTE_PROCESSING = 'processing outstanding tasks';
+    const REMOTE_IN_PROGRESS_BUCKET_CREATION = 'processing bucket creation';
+    const REMOTE_IN_PROGRESS = 'processing outstanding tasks';
     const REMOTE_READY = 'ready';
     const REMOTE_UNKNOWN = 'unknown';
 
@@ -55,7 +56,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
     // In Internet archive, the remote identifier is the bucket for item and the
     // the bucket followed by the sanitized filename for file.
     public $remote_id = '';
-    public $remote_status = '';
+    public $remote_status = self::REMOTE_NOT_TO_CHECK;
     public $remote_metadata;
     public $remote_checked = '0000-00-00 00:00:00';
     public $modified;
@@ -82,7 +83,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
     {
         $this->record_type = 'Item';
         $this->record_id = $itemId;
-        $this->status = self::TO_BEAM_UP;
+        $this->status = self::STATUS_TO_BEAM_UP;
     }
 
     public function setFileToBeamUp($fileId, $requiredBeamId = 0)
@@ -90,7 +91,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
         $this->record_type = 'File';
         $this->record_id = $fileId;
         $this->required_beam_id = $requiredBeamId;
-        $this->status = self::TO_BEAM_UP;
+        $this->status = self::STATUS_TO_BEAM_UP;
     }
 
     public function setStatus($status)
@@ -106,13 +107,13 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
 
     public function setToBeamUp()
     {
-        $this->status = self::TO_BEAM_UP;
+        $this->status = self::STATUS_TO_BEAM_UP;
     }
 
     /**
      * Set if a record is indexed on search engines (public) or not (private).
      */
-    public function setIndex($index)
+    public function setPublic($index)
     {
         $this->public = (int) $index;
     }
@@ -126,7 +127,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
             $remoteId = get_option('beamia_bucket_prefix') . '_' . $this->record_id;
         }
         $remoteId = $this->_sanitizeString($remoteId);
-        // TODO check if this remote identifier exists.
+        // TODO check if this remote identifier exists already.
 
         $this->remote_id = $remoteId;
     }
@@ -141,19 +142,17 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
             $filename = $file->original_filename;
         }
 
-        if (!$this->required_beam_id) {
-            throw new Exception(__("Beam me up to Internet Archive: File " . $this->record_id . " need a beam for the parent item before it can be uploaded."));
-        }
-
-        $requiredBeam = $this->_getRequiredBeam();
-        if (!$requiredBeam) {
-            throw new Exception(__("Beam me up to Internet Archive: Beam " . $this->required_beam_id . " for item " . $this->record_id . " doesn't exist."));
+        try {
+            $this->_beam_item = $this->_getRequiredBeam();
+        } catch (Exception_BeamInternetArchiveBeam $e) {
+            // Log is already done.
+            throw new Exception_BeamInternetArchiveBeam($msg);
         }
 
         // Don't sanitize full filepath, because we need the separator '/'.
-        $remoteId = $requiredBeam->remote_id . '/' . $this->_sanitizeString($filename);
+        $remoteId = $this->_beam_item->remote_id . '/' . $this->_sanitizeString($filename);
 
-        // TODO Check if this remote identifier exists.
+        // TODO Check if this remote identifier exists already.
 
         $this->remote_id = $remoteId;
     }
@@ -168,21 +167,26 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
             'record_id' => $this->record_id,
         ));
 
+        // Base metadata of record.
         if (!$settings) {
             $record = $this->_getRecord();
 
             $title = metadata($record, array('Dublin Core', 'Title'));
             if (!$title) {
-                $title = $this->record_type . ' ' . $this->record_id;
+                $title = $this->record_type . ' #' . $this->record_id;
             }
+            $settings[] = 'x-archive-meta-title:' . $title;
 
-            $settings = array(
-                'x-archive-meta-collection:' . 'test_collection',//'collection of the record',
-                'x-archive-meta-title:' . $title,
-            );
+            if ($this->record_type == 'Item' && !empty($record->collection_id)) {
+                $collection = get_record_by_id('collection', $record->collection_id);
+                $collectionTitle = metadata($collection, array('Dublin Core', 'Title'));
+                if ($collectionTitle) {
+                    $settings[] = 'x-archive-meta-collection:' . $collection;
+                }
+            }
         }
 
-        // Add the generic media type.
+        // Add the required generic media type.
         $settings[] = 'x-archive-meta-mediatype:' . $this->_getMediaType();
 
         $this->settings = $settings;
@@ -284,7 +288,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
     }
 
     /**
-     * This url is where the file is saved and downloadable.
+     * This url is where the file is saved and downloadable (only if beamed up).
      *
      * @return url
      */
@@ -298,8 +302,14 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
         }
 
         // No other check: if file is beamed up, there is a beam and metadata.
-        $beamItem = $this->_getRequiredBeam();
-        return 'https://' . $beamItem->remote_metadata->server . $beamItem->remote_metadata->dir . '/' . $this->remote_metadata->name;
+        try {
+            $this->_beam_item = $this->_getRequiredBeam();
+        } catch (Exception_BeamInternetArchiveBeam $e) {
+            // Log is already done.
+            return '';
+        }
+
+        return 'https://' . $this->_beam_item->remote_metadata->server . $this->_beam_item->remote_metadata->dir . '/' . $this->remote_metadata->name;
     }
 
     /**
@@ -323,13 +333,47 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
     }
 
     /**
-     * Indicate if record is marked to be beam up or not.
+     * Check if the record is well formed and ready to be beam up or not.
      *
      * @return boolean.
      */
-    public function isToBeamUp()
+    public function isReadyToBeamUp()
     {
-        return ($this->status == self::TO_BEAM_UP);
+        $record = $this->_getRecord();
+        // Generic check to verify if record still exists.
+        if (!$record) {
+            // Check to avoid to repeat log.
+            if ($this->status != self::STATUS_NO_RECORD) {
+                $this->saveWithStatus(self::STATUS_NO_RECORD);
+                _log(__('Beam me up to Internet Archive: %s #%d does not exist.', $this->record_type, $this->record_id), Zend_Log::WARN);
+            }
+            return false;
+        }
+        // No other check for item.
+
+        // Check required item for file.
+        if ($this->record_type == 'File') {
+            // Check if bucket for the item is created.
+            try {
+                $this->_beam_item = $this->_getRequiredBeam();
+            } catch (Exception_BeamInternetArchiveBeam $e) {
+                // Log is already done.
+                return false;
+            }
+
+            if ($this->_beam_item->isBeamedUpOrFinishing()) {
+                if ($this->status == self::STATUS_TO_BEAM_UP_WAITING_BUCKET) {
+                    $beam->saveWithStatus(self::STATUS_TO_BEAM_UP);
+                }
+            }
+            else {
+                if ($this->status == self::STATUS_TO_BEAM_UP) {
+                    $beam->saveWithStatus(self::STATUS_TO_BEAM_UP_WAITING_BUCKET);
+                }
+            }
+        }
+
+        return ($this->status == self::STATUS_TO_BEAM_UP);
     }
 
     /**
@@ -339,7 +383,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
      */
     public function isBeamingUp()
     {
-        return ($this->status == self::BEAMING_UP);
+        return ($this->status == self::STATUS_IN_PROGRESS);
     }
 
     /**
@@ -349,7 +393,7 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
      */
     public function isBeamedUp()
     {
-        return ($this->status == self::BEAMED_UP);
+        return ($this->status == self::STATUS_COMPLETED);
     }
 
     /**
@@ -357,62 +401,102 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
      *
      * @return boolean.
      */
-    public function isBeamedUpOrWaiting()
+    public function isBeamedUpOrFinishing()
     {
-        return ($this->status == self::BEAMED_UP || $this->status == self::BEAMED_UP_WAITING_REMOTE);
+        return ($this->status == self::STATUS_COMPLETED || $this->status == self::STATUS_COMPLETED_WAITING_REMOTE);
     }
 
     /**
-     * Once bucket is created, files can be uploaded even if they can't be
-     * accessed.
-     *
-     * @param boolean $update If false, don't update of item before.
+     * It's useless to check a remote server if the record is not uploaded.
      *
      * @return boolean.
      */
-    public function isRemoteReady($update = true)
+    public function isRemoteStatusCheckable()
     {
-        if ($update) {
-            $this->checkRemoteStatus();
-        }
+        return in_array($this->status, array(
+            self::STATUS_IN_PROGRESS,
+            self::STATUS_COMPLETED_WAITING_BUCKET_CREATION,
+            self::STATUS_COMPLETED_WAITING_REMOTE,
+            self::STATUS_COMPLETED,
+            self::STATUS_NO_RECORD,
+            self::STATUS_TO_UPDATE,
+            self::STATUS_UPDATING,
+            self::STATUS_TO_DELETE,
+            self::STATUS_DELETING,
+            self::STATUS_DELETED,
+        ));
+    }
+
+    /**
+     * Check if the remote server of a beam is ready.
+     *
+     * @return boolean.
+     */
+    public function isRemoteReady()
+    {
+        $this->checkRemoteStatus();
         return ($this->remote_status == self::REMOTE_READY);
     }
 
     /**
+     * Check if the remote server of a beam is ready or available.
+     *
      * Once bucket is created, files can be uploaded even if they can't be
      * accessed.
      *
-     * @param boolean $update If false, don't update of item before.
+     * @return boolean.
+     */
+    public function isRemoteAvailable()
+    {
+        $this->checkRemoteStatus();
+        return ($this->remote_status == self::REMOTE_READY || $this->remote_status == self::REMOTE_IN_PROGRESS);
+    }
+
+    /**
+     * Check if the remote server of a beam is ready or available.
+     *
+     * Once bucket is created, files can be uploaded even if they can't be
+     * accessed. This function avoids multiple check when a batch is processing.
      *
      * @return boolean.
      */
-    public function isRemoteAvailable($update = true)
+    private function _isRemoteAvailableNoCheck()
     {
-        if ($update) {
-            $this->checkRemoteStatus();
-        }
-        return ($this->remote_status == self::REMOTE_READY || $this->remote_status == self::REMOTE_PROCESSING);
+        return ($this->remote_status == self::REMOTE_READY || $this->remote_status == self::REMOTE_IN_PROGRESS);
     }
 
     /**
      * Check remote status and update beam accordingly.
      *
+     * The check is done only when the record is uploading or has been uploaded.
+     * The check doesn't simply return status, but update it, because metadata
+     * of item can be updated at any time, in particular when files are sent.
+     *
      * @return remote status.
      */
     public function checkRemoteStatus()
     {
-        if ($this->record_type == 'Item') {
-            $this->_checkRemoteStatusForItem();
+        try {
+            if ($this->record_type == 'Item') {
+                $this->_checkRemoteStatusForItem();
+            }
+            else {
+                $this->_checkRemoteStatusForFile();
+            }
+        } catch (Exception_BeamInternetArchiveBeam $e) {
+            _log($e->getMessage(), Zend_Log::WARN);
+            $this->remote_status = self::REMOTE_CHECK_FAILED;
+            $this->save();
+        } catch (Exception_BeamInternetArchiveConnect $e) {
+            _log($e->getMessage(), Zend_Log::WARN);
+            $this->remote_status = self::REMOTE_CHECK_FAILED;
+            $this->save();
         }
-        else {
-            $this->_checkRemoteStatusForFile();
-        }
-
         return $this->remote_status;
     }
 
     /**
-     * @return array of beams of files attached to an item to be beamed up.
+     * Check and update status for all files attached to an item.
      */
     public function checkRemoteStatusForFilesOfItem()
     {
@@ -420,19 +504,36 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
             return;
         }
 
-        // Check status of item only one time.
-        $itemRemoteStatus = $this->isRemoteAvailable();
+        // Check and update status of item only one time.
+        $result = $this->isRemoteAvailable();
 
+        // Check files even if remote is not available in order to update their
+        // status.
         $beams = $this->_db->getTable('BeamInternetArchiveBeam')->findBeamsOfAttachedFiles($this->id);
         foreach ($beams as $key => $beam) {
             $beam->_checkRemoteStatusForFile(false);
         }
     }
 
+    /**
+     * Check and update remote status for an item.
+     */
     private function _checkRemoteStatusForItem()
     {
-        // Don't simply return status, but update it, because metadata of item
-        // can be updated in particular when files are sent.
+        // Don't try to check remote status if record is not beamed up.
+        if (!$this->isRemoteStatusCheckable()) {
+            $this->remote_status = self::REMOTE_NOT_TO_CHECK;
+            $this->save();
+            return;
+        }
+
+        // Quick check connection to avoid useless file_get_contents() below.
+        if (!$this->_isConnectedToRemote()) {
+            $this->remote_status = self::REMOTE_CHECK_FAILED;
+            $this->save();
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Cannot connect the remote site. Check your connection.'));
+        }
+
         $url = $this->getUrlForMetadata();
 
         // Generally, creation of a bucket takes some seconds, but it can be
@@ -445,82 +546,97 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
         $this->remote_checked = date('Y-m-d G:i:s');
         if ($remoteMetadata === false) {
             $this->remote_status = self::REMOTE_CHECK_FAILED;
-            // Previous metadata are kept, if any, because it can be a simple
-            // problem of connection. Previous status is kept too.
             $this->save();
-            throw new Exception(__('Beam me up to Internet Archive: Cannot connect the remote site to check url "' . $url . '"'));
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Cannot connect the remote site to check url "%s".', $url));
         }
 
         if ($result == '{}') {
             // A complementary check is needed to know if the bucket is
-            // currently being created or if there is an error.
+            // currently being created or if there was an error.
 
             // We simply need to wait more time for the creation of the bucket.
             try {
                 $result = $this->_checkRemoteTasks();
-            } catch (Exception $e) {
-                throw new Exception($e->getMessage());
+            } catch (Exception_BeamInternetArchiveConnect $e) {
+                // Remote status is already updated.
+                throw new Exception_BeamInternetArchiveConnect($e->getMessage());
             }
             return;
         }
 
+        // As we get metadata, we remove settings to reduce memory use.
         $this->remote_metadata = json_decode($remoteMetadata);
+        $this->settings = array();
 
         if ($this->remote_metadata->files_count === 0) {
-            $this->remote_status = self::REMOTE_PROCESSING;
-            $this->saveWithStatus(self::BEAMED_UP_WAITING_REMOTE);
+            $this->remote_status = self::REMOTE_IN_PROGRESS;
+            $this->saveWithStatus(self::STATUS_COMPLETED_WAITING_REMOTE);
             return;
         }
 
-        $this->remote_status = self::REMOTE_READY;
-        // As we get metadata, we remove settings to reduce memory use.
-        $this->settings = array();
-        $this->saveWithStatus(self::BEAMED_UP);
+        if ($this->remote_status != self::REMOTE_READY) {
+            $this->remote_status = self::REMOTE_READY;
+            _log(__('Beam me up to Internet Archive: Successful upload of %s #%d.', $this->record_type, $this->record_id), Zend_Log::INFO);
+        }
+        $this->saveWithStatus(self::STATUS_COMPLETED);
     }
 
     /**
-     * Check remote status for a file.
+     * Check and update remote status for a file.
      *
      * @param boolean $updateItem If false, don't update status of item before.
-     *
-     * @return void.
      *
      * @todo The remote status is incorrect when it is updated.
      */
     private function _checkRemoteStatusForFile($updateItem = true)
     {
+        // Don't try to check remote status if record is not beamed up.
+        if (!$this->isRemoteStatusCheckable()) {
+            $this->remote_status = self::REMOTE_NOT_TO_CHECK;
+            $this->save();
+            return;
+        }
+
         // For a file, check status of parent item is needed.
         try {
             $this->_beam_item = $this->_getRequiredBeam();
-        } catch (Exception $e) {
-            throw new Exception($e->getMessage());
+        } catch (Exception_BeamInternetArchiveBeam $e) {
+            // Log is already done.
+            throw new Exception_BeamInternetArchiveBeam($e->getMessage());
         }
 
         $this->remote_checked = date('Y-m-d G:i:s');
 
-        if (!$this->_beam_item->isRemoteAvailable($updateItem)) {
-            $this->remote_status = self::REMOTE_PROCESSING_BUCKET_CREATION;
+        $result = ($updateItem) ?
+            $this->_beam_item->isRemoteAvailable() :
+            $this->_beam_item->_isRemoteAvailableNoCheck();
+        if (!$result) {
+            $this->remote_status = self::REMOTE_IN_PROGRESS_BUCKET_CREATION;
             $this->save();
             return;
         }
 
         // Required beam is ok, so we can check status of beam for file.
         if ($this->_beam_item->remote_metadata->files_count === 0) {
-            $this->remote_status = self::REMOTE_PROCESSING;
+            $this->remote_status = self::REMOTE_IN_PROGRESS;
             $this->save();
             return;
         }
 
         // We can do a request to the true file or a simple check of metadata.
+        // To avoid problem of connection, a simple check of metadata is done.
         $remoteFiles = $this->_beam_item->remote_metadata->files;
         foreach ($remoteFiles as $key => $remoteFile) {
-            $file = get_record_by_id($this->record_type, $this->record_id);
-            if ($remoteFile->name == $file->original_filename) {
+            // Check with remote id, the sanitized version of original filename.
+            if ($remoteFile->name == pathinfo($this->remote_id, PATHINFO_BASENAME)) {
+                if ($this->status != self::STATUS_COMPLETED) {
+                    _log(__('Beam me up to Internet Archive: Successful upload of %s #%d.', $this->record_type, $this->record_id), Zend_Log::INFO);
+                }
                 $this->remote_metadata = $remoteFile;
                 $this->remote_status = self::REMOTE_READY;
                 // As we get metadata, we remove settings to reduce memory use.
                 $this->settings = array();
-                $this->saveWithStatus(self::BEAMED_UP);
+                $this->saveWithStatus(self::STATUS_COMPLETED);
                 return;
             }
         }
@@ -550,8 +666,11 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
         if (empty($this->record_type)) {
             $this->addError('record_type', __('All records must have a record type.'));
         }
-        if ($this->record_id < 1) {
-            $this->addError('record_id', __('Invalid record identifier.'));
+        if ($this->record_id <= $this->required_beam_id) {
+            $this->addError('record_id', __('Invalid record identifier: it cannot be lower than the id of the required beam.'));
+        }
+        if ($this->record_type == 'File' && (empty($this->required_beam_id) || $this->required_beam_id == '0')) {
+            $this->addError('required_beam_id', __('A file cannot be uploaded if its parent item is not uploaded before.'));
         }
     }
 
@@ -612,15 +731,33 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
      */
     private function _getRequiredBeam()
     {
+        if ($this->record_type == 'item') {
+            $this->required_beam_id = 0;
+            $this->_required_beam = null;
+            return $this->_required_beam;
+        }
+
+        // Check for file.
         if (!$this->_required_beam) {
-            if (!$this->required_beam_id) {
-                $this->_required_beam = null;
+            // Avoid to relog.
+            if ($this->status == self::STATUS_ERROR) {
+                $msg = __('Beam me up to Internet Archive: Status of File #%d is error.', $this->record_id);
+                throw new Exception_BeamInternetArchiveBeam($msg);
             }
-            else {
-                $this->_required_beam = get_record_by_id('BeamInternetArchiveBeam', $this->required_beam_id);
-                if (!$this->_required_beam) {
-                    throw new Exception(__("Beam me up to Internet Archive: Beam " . $this->required_beam_id . " doesn't exist."));
-                }
+
+            if (!$this->required_beam_id) {
+                $msg = __('Beam me up to Internet Archive: File #%d needs a beam for the parent item before it can be uploaded.', $this->record_id);
+                $this->saveWithStatus(self::STATUS_ERROR);
+                _log($msg, Zend_Log::WARN);
+                throw new Exception_BeamInternetArchiveBeam($msg);
+            }
+
+            $this->_required_beam = get_record_by_id('BeamInternetArchiveBeam', $this->required_beam_id);
+            if (!$this->_required_beam) {
+                $msg = __("Beam me up to Internet Archive: Beam #%d for item #%d doesn't exist.", $this->required_beam_id, $this->record_id);
+                $this->saveWithStatus(self::STATUS_ERROR);
+                _log($msg, Zend_Log::WARN);
+                throw new Exception_BeamInternetArchiveBeam($msg);
             }
         }
         return $this->_required_beam;
@@ -634,51 +771,46 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
     private function _checkRemoteTasks() {
         $url = $this->getUrlForTasks();
 
-        // Quick check: Internet Archive respond 409 during creation of bucket.
-        // This error is good: this bucket is currently being created because we
-        // can't access to this url now!
-        if ($this->_checkUrlAndGetHttpCode($url) == 409) {
-            $this->remote_status = self::REMOTE_PROCESSING_BUCKET_CREATION;
-            $this->saveWithStatus(self::BEAMED_UP_WAITING_BUCKET_CREATION);
-            return true;
+        // Quick check connection to avoid useless file_get_contents() below.
+        // It's important to check one more time for the next verification.
+        if (!$this->_isConnectedToRemote()) {
+            $this->remote_status = self::REMOTE_CHECK_FAILED;
+            $this->save();
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Cannot connect the remote site. Check your connection.'));
         }
 
         $tasksHistory = file_get_contents($url);
 
-        // Connection problem.
+        // As we know there is no connection issue, tasksHistory can't be false.
         if ($tasksHistory === false) {
-            // Previous metadata are kept, if any, because it can be a simple
-            // problem of connection.
-            $this->remote_status = self::REMOTE_CHECK_FAILED;
+            $this->remote_status = self::REMOTE_NO_BUCKET;
+            $this->saveWithStatus(self::STATUS_FAILED_TO_BEAM_UP);
             $this->save();
-            throw new Exception(__('Beam me up to Internet Archive: Cannot connect the remote server for url "' . $url . '".'));
+            throw new Exception_BeamInternetArchiveConnect(__('Beam me up to Internet Archive: Cannot connect the remote server for url "%s".', $url));
         }
 
         $oldTasks = (strpos($tasksHistory, 'No historical tasks.') === false);
         $newTasks = (strpos($tasksHistory, 'No outstanding tasks.') === false);
 
-        // No bucket created for this url, because there are no old and no new
-        // tasks.
+        // No bucket created for the url because there are no old nor new tasks.
         if (!$oldTasks && !$newTasks) {
-            // No metadata can exist.
-            $this->remote_metadata = null;
             $this->remote_status = self::REMOTE_NO_BUCKET;
-            $this->saveWithStatus(self::FAILED);
-            throw new Exception(__('Beam me up to Internet Archive: No bucket exists for item "' . $this->record_id . '". Check your configuration and your keys.'));
+            $this->saveWithStatus(self::STATUS_FAILED_TO_BEAM_UP);
+            throw new Exception_BeamInternetArchiveBeam(__('Beam me up to Internet Archive: No bucket exists for item "%s". Check your configuration and your keys.', $this->record_id));
         }
 
         // No need to do more check: if we are here, that's because metadata are
-        // not available.
-        $this->remote_status = self::REMOTE_PROCESSING_BUCKET_CREATION;
-        $this->saveWithStatus(self::BEAMED_UP_WAITING_BUCKET_CREATION);
+        // not available. No change of status.
+        $this->remote_status = self::REMOTE_IN_PROGRESS_BUCKET_CREATION;
+        $this->save();
         return true;
     }
 
     /**
-     * Return http status of a request.
+     * Quick check of connectivity to avoid wasting time.
      */
-    private function _checkUrlAndGetHttpCode($url) {
-        $curl = curl_init($url);
+    private function _isConnectedToRemote() {
+        $curl = curl_init(self::BASE_URL_CHECK);
         curl_setopt($curl, CURLOPT_CONNECTTIMEOUT, 10);
         curl_setopt($curl, CURLOPT_HEADER, true);
         curl_setopt($curl, CURLOPT_NOBODY, true);
@@ -686,6 +818,6 @@ class BeamInternetArchiveBeam extends Omeka_Record_AbstractRecord
         $response = curl_exec($curl);
         $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
         curl_close($curl);
-        return $httpCode;
+        return ($response !== false && $httpCode == 200);
     }
 }
