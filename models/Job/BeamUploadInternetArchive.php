@@ -24,17 +24,14 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 
     public function perform()
     {
-        // Remove duplicates beams.
-        $this->_beams = array_combine($this->_options['beams'], $this->_options['beams']);
         $beam = $this->_beam = $this->_beam_item = get_record_by_id('BeamInternetArchiveBeam', $this->_options['beams']['item']);
         $item = $this->_item = get_record_by_id('item', $this->_beam_item->record_id);
 
         // Insert or update an Internet Archive bucket for the item.
         try {
             if ($this->_createBucket() === false) {
-                // More precisely, the job queue status depends on beam status.
                 return JOB_QUEUE_STATUS_WAITING;
-            };
+            }
         } catch (Exception_BeamInternetArchiveBeam $e) {
             // Status is already updated.
             _log(__('Beam me up to Internet Archive: Error during the creation of the bucket for item "%s".', $beam->record_id), Zend_Log::WARN);
@@ -54,9 +51,16 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         }
 
         // Now that bucket is ready, run multi-threaded curl to beam up files.
-        // Beam item will be checked only.
-        unset($this->_options['beams']['item']);
-        $this->_beams = $this->_db->getTable('BeamInternetArchiveBeam')->findMultiple($this->_options['beams']);
+
+        // Order beams: priority to required record, which have a lower id than
+        // non required records. Beam records for item will be checked only.
+        sort($this->_options['beams']);
+        // Remove duplicates beams.
+        $this->_beams = array_combine($this->_options['beams'], $this->_options['beams']);
+        // Get full beams.
+        $this->_beams = $this->_db
+            ->getTable('BeamInternetArchiveBeam')
+            ->findMultiple($this->_options['beams']);
 
         $curlMultiHandle = curl_multi_init();
         // Prepare only files that are not beamed up yet.
@@ -79,7 +83,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
             $curl = $this->_initializeCurl();
             // Specific option for curl.
             curl_setopt($curl, CURLOPT_HTTPHEADER, $this->_getMetadataHeadersForCurl());
-            curl_setopt($curl, CURLOPT_URL, $beam->getUrlForFileToUpload());
+            curl_setopt($curl, CURLOPT_URL, $beam->getUrlForRemoteFileToUpload());
             curl_setopt($curl, CURLOPT_INFILE, fopen(FILES_DIR . '/original/' . $this->_file->filename, 'r'));
             curl_setopt($curl, CURLOPT_INFILESIZE, $this->_file->size);
             // Add this instance of curl in a multi handle curl.
@@ -129,12 +133,10 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 
         // Check if beam is ok and not created yet.
         if (!$beam->isReadyToBeamUp()) {
-            // In fact, the status depends on beam status.
-            return false;
+            return $beam->isAlreadyCreated();
         }
 
-        // Prepare content to be uploaded.
-        // Content are metadata of item.
+        // Prepare content to be uploaded. Content are metadata of item.
         $content = all_element_texts($item, array('show_empty_elements' => true));
         try {
             $filePointer = $this->_prepareFileFromItem($content);
@@ -165,7 +167,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
             $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP);
             throw new Exception_BeamInternetArchiveConnect($e->getMessage());
         }
-        $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_BUCKET_CREATION);
+        $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_REMOTE);
         _log(__('Finishing to upload item #%d. Waiting remote status for bucket creation.', $item->id), Zend_Log::INFO);
         curl_close($curl);
     }
@@ -259,7 +261,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
      *
      * @param $curl single curl handle to execute
      *
-     * @return curl info if success.
+     * @return curl info if success or throw error message.
      */
     private function _execSingleHandle($curl)
     {

@@ -88,7 +88,7 @@
     <div class="inputs">
         <?php echo get_view()->formText('BeamiaBucketPrefix', get_option('beamia_bucket_prefix'), null);?>
         <p class="explanation">
-            <?php echo __('Bucket prefix is used to build the url of each item you beam up to Internet Archive. The url will be this prefix followed by "_" and the item id.');?>
+            <?php echo __('Bucket prefix is used to build the unique url of each item you beam up to Internet Archive. The url will be this prefix followed by "_" and the item id.');?>
         </p>
     </div>
 </div>
