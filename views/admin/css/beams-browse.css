@@ -5,6 +5,10 @@
     float: left;
 }
 
+.beam.red {
+    background-color: #FFC1C1;
+}
+
 .beams.browse #advanced-search-link {
     float: left;
     font-size: 14px;

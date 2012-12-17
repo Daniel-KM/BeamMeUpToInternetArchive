@@ -23,7 +23,7 @@
     });
 </script>
 
-<h4>Note that if you are uploading to the Internet Archive, saving an item may take a while. Check item page to see progress.</h4>
+<h4>Note that if you are uploading to the Internet Archive, saving an item may take a while. Check item page to see current progress.</h4>
 
 <div class="field">
     <div id="BeamiaPostToInternetArchive_label" class="one columns alpha">
@@ -99,16 +99,34 @@
     <div class="inputs">
         <?php echo get_view()->formCheckbox('BeamiaJobType', true, array('checked' => (get_option('beamia_job_type') == 'long running')));?>
         <p class="explanation"><?php echo __(
-            'Check this button if the php-cli of your server supports curl.'
+            'Check this button if the php-cli of your server supports curl (recommended for large files in particular). '
         );?></p>
     </div>
 </div>
 <div class="field">
-    <?php echo get_view()->formLabel('BeamiaMaxTimeItem', __('Max time to beam up an item'));?>
+    <?php echo get_view()->formLabel('BeamiaMaxTimeToCheckBucket', __('Maximum time to create a bucket'));?>
     <div class="inputs">
-        <?php echo get_view()->formText('BeamiaMaxTimeItem', get_option('beamia_max_time_item'), null);?>
+        <?php echo get_view()->formText('BeamiaMaxTimeToCheckBucket', get_option('beamia_max_time_to_check_bucket'), null);?>
         <p class="explanation">
-            <?php echo __('Maximum time in seconds to check status of an item.');?>
+            <?php echo __('Maximum time in seconds to wait for the creation of a bucket (default: 300).');?>
+        </p>
+    </div>
+</div>
+<div class="field">
+    <?php echo get_view()->formLabel('BeamiaMinTimeBeforeNewCheck', __('Minimum time before a new check'));?>
+    <div class="inputs">
+        <?php echo get_view()->formText('BeamiaMinTimeBeforeNewCheck', get_option('beamia_min_time_before_new_check'), null);?>
+        <p class="explanation">
+            <?php echo __('Minimum time in seconds to wait before a new check of an uploaded record (default: 60).');?>
+        </p>
+    </div>
+</div>
+<div class="field">
+    <?php echo get_view()->formLabel('beamiaMaxSimultaneousProcess', __('Maximum simultaneous records to beam up'));?>
+    <div class="inputs">
+        <?php echo get_view()->formText('beamiaMaxSimultaneousProcess', get_option('beamia_max_simultaneous_process'), null);?>
+        <p class="explanation">
+            <?php echo __('Maximum records to process simultaneously (default: 5).');?>
         </p>
     </div>
 </div>
@@ -118,5 +136,5 @@
     <li>Generally, creation of a bucket takes some seconds, but it can be some minutes and even some hours in case of maintenance.</li>
     <li>Files can't be uploaded as long as bucket creation is not finished. Anyway, they are added in a queue for a background job process.</li>
     <li>If two files has same original name, the second will overide the first in the bucket.</li>
-    <li>TODO Status is automatically updated when the item view is displayed and after an item is saved or updated.</li>
+    <li>Status is automatically updated when the item view is displayed and after an item is saved or updated.</li>
 </ul>

@@ -18,35 +18,39 @@
  * done Update sent status of files (every time an item or a file is displayed).
  * done Relaunch processes if failed or not sent (not automatically in order
  *   to allow checks).
- * @todo Check if pbcore metadata are used.
+ * done Check if pbcore metadata are used (hook).
  * done Change echo by return.
  *
  * * Things to do to improve plugin:
  * done Check files with the same original name (flat directory on IA).
  * done Check item name for bucket (should be unique, else it's updated).
- * @todo Manage update of item and files.
- * @todo Manage deletion of item and files.
- * @todo Make job to use queued beams in table if there are no direct job.
+ * done Manage update of item and files.
+ * done Manage deletion of item and files.
+ * done Make job to use queued beams in table if there are no direct job.
  * done Status page of all files and items.
  * done Improve after save hook in order to not use post.
- * @todo Finish to clean indexController and javascripts, copy of
+ * done Finish to clean indexController and javascripts, copy of
  *   ItemsController and associated scripts.
  *
  * * Less important, just for better MVC or ergonomy.
  * @todo Individual select for files of an item when editing item.
- * @todo Individual beam me up when editing file.
+ * @todo Individual beam me up when editing file (currently only in main view).
  * done Beam controller.
  * @todo Beam builder (from Beam model).
- * @todo Curl object builder (or Zend http).
+ * @todo Curl object builder (or use Zend http?).
  * @todo Beam as a mixin of item and file.
- * @todo Follow percent of progress when uploading records (via curl).
+ * @todo Follow percent of progress when uploading records (via session).
  * nottodo Save direct url to file in database [no: use /download/ path].
- * @todo Merge settings and remote_metadata columns in one metadata column?
- * nottodo Merge local status and remote_status in table [no: too different].
+ * done Merge settings and remote_metadata columns in one metadata column
+ *   (settings removed).
+ * done Change local status and remote status into status / process.
  * @todo Add beams search filters for a better status view.
- * @todo Add a check for all files and items that haven't a matching beam
+ * nottodo Add a check for all files and items that haven't a matching beam
  *   (currently, this is automatically done when displaying an item or a file).
- * @todo Optimize remote checking.
+ *   (not to do because beams are created at any time).
+ * done Optimize remote checking.
+ * @todo Check https base url.
+ * @todo Session progress.
  */
 
 require_once dirname(__FILE__) . '/helpers/BeamMeUpToInternetArchiveFunctions.php';
@@ -96,8 +100,9 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         'beamia_media_type' =>  'Please contact the Internet Archive',
         'beamia_bucket_prefix' => 'omeka',
         'beamia_job_type' => 'normal',
-        // Max time to check success for the bucket creation.
-        'beamia_max_time_item' => 300,
+        'beamia_max_time_to_check_bucket' => 300,
+        'beamia_min_time_before_new_check' => 60,
+        'beamia_max_simultaneous_process' => 5,
     );
 
     /**
@@ -123,7 +128,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookUninstall()
     {
-        $sql = "DROP TABLE IF EXISTS `{$this->_db->BeamInternetArchiveBeam}`;";
+        $sql = "DROP TABLE IF EXISTS `{$this->_db->BeamInternetArchiveRecord}`;";
         $this->_db->query($sql);
 
         $this->_uninstallOptions();
@@ -147,26 +152,25 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     private function _installTable()
     {
         $sql = "
-            CREATE TABLE IF NOT EXISTS `{$this->_db->BeamInternetArchiveBeam}` (
-              `id` int unsigned NOT NULL auto_increment COMMENT 'Identifier (id of an item should be lower than ids of its attached files)',
-              `record_type` varchar(50) NOT NULL COMMENT 'Omeka record type of the record to upload',
-              `record_id` int unsigned NOT NULL COMMENT 'Identifier of the record to upload',
-              `required_beam_id` int unsigned DEFAULT 0 COMMENT 'Identifier of the beam, used when the record depends on another one',
-              `status` varchar(255) collate utf8_unicode_ci DEFAULT 'not to beam up' COMMENT 'Uploading status of the record',
-              `public` tinyint DEFAULT 0 COMMENT 'Make public or not',
-              `settings` text collate utf8_unicode_ci COMMENT 'Serialized list of parameters used to upload the record',
-              `remote_id` varchar(256) DEFAULT '' COMMENT 'Identifier of the record on the remote site',
-              `remote_status` varchar(255) collate utf8_unicode_ci DEFAULT 'not applicable' COMMENT 'Last remote status of the uploaded record',
-              `remote_metadata` text collate utf8_unicode_ci COMMENT 'Json object of last informations get from remote site',
-              `remote_checked` timestamp NOT NULL  DEFAULT '0000-00-00 00:00:00' COMMENT 'Last check of the record on the remote site',
-              `modified` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP COMMENT 'Last modification of the record',
-              PRIMARY KEY  (`id`),
-              KEY `record_type_record_id` (`record_type`, `record_id`),
-              KEY `record_type` (`record_type`),
-              KEY `required_beam_id` (`required_beam_id`),
-              KEY `status` (`status`),
-              KEY `remote_status` (`remote_status`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
+        CREATE TABLE IF NOT EXISTS `{$this->_db->BeamInternetArchiveRecord}` (
+            `id` int unsigned NOT NULL auto_increment COMMENT 'Identifier (id of an item should be lower than ids of its attached files)',
+            `record_type` varchar(50) NOT NULL COMMENT 'Omeka record type of the record to upload',
+            `record_id` int unsigned NOT NULL COMMENT 'Identifier of the record to upload',
+            `required_beam_id` int unsigned DEFAULT 0 COMMENT 'Identifier of the beam, used when the record depends on another one',
+            `status` enum('not to beam up', 'to beam up', 'to update', 'to remove') COLLATE 'utf8_unicode_ci' NULL DEFAULT 'not to beam up' COMMENT 'Status to set for the record',
+            `public` tinyint DEFAULT 0 COMMENT 'Make public or not',
+            `process` enum('completed', 'queued', 'queued waiting bucket creation', 'processing', 'processing remotely', 'failed after connection error', 'failed after record error') COLLATE 'utf8_unicode_ci' NULL DEFAULT 'completed' COMMENT 'Process status of the record',
+            `remote_id` varchar(256) DEFAULT '' COMMENT 'Identifier of the record on the remote site',
+            `remote_metadata` text COLLATE utf8_unicode_ci COMMENT 'Json object of last informations get from remote site',
+            `remote_checked` timestamp NOT NULL  DEFAULT '0000-00-00 00:00:00' COMMENT 'Last check of the record on the remote site',
+            `modified` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP COMMENT 'Last modification of the record',
+            PRIMARY KEY  (`id`),
+            KEY `record_type_record_id` (`record_type`, `record_id`),
+            KEY `record_type` (`record_type`),
+            KEY `required_beam_id` (`required_beam_id`),
+            KEY `status` (`status`),
+            KEY `process` (`process`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci
         ";
         $this->_db->query($sql);
     }
@@ -186,7 +190,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         // Query for item. All id for items should be lower than the attached
         // those for the attached files.
         $sql = "
-            INSERT INTO `{$this->_db->BeamInternetArchiveBeam}` (record_type, record_id)
+            INSERT INTO `{$this->_db->BeamInternetArchiveRecord}` (record_type, record_id)
             SELECT 'Item', id
             FROM `{$this->_db->Item}`
         ";
@@ -195,10 +199,10 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         // Query for files. This is not a problem if attached files are not
         // inserted just after the parent item, because this is managed in view.
         $sql = "
-            INSERT INTO `{$this->_db->BeamInternetArchiveBeam}` (record_type, record_id, required_beam_id)
+            INSERT INTO `{$this->_db->BeamInternetArchiveRecord}` (record_type, record_id, required_beam_id)
             SELECT 'File', files.id, beams.id
             FROM `{$this->_db->File}` files
-                JOIN `{$this->_db->BeamInternetArchiveBeam}` beams
+                JOIN `{$this->_db->BeamInternetArchiveRecord}` beams
                     ON beams.record_type = 'Item'
                         AND beams.record_id = files.item_id
         ";
@@ -247,7 +251,9 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         set_option('beamia_media_type', trim($post['BeamiaMediaType']));
         set_option('beamia_bucket_prefix', trim($post['BeamiaBucketPrefix']));
         set_option('beamia_job_type', ($post['BeamiaJobType']) ? 'long running' : 'normal');
-        set_option('beamia_max_time_item', (int) $post['BeamiaMaxTimeItem']);
+        set_option('beamia_max_time_to_check_bucket', (int) $post['BeamiaMaxTimeToCheckBucket']);
+        set_option('beamia_min_time_before_new_check', (int) $post['BeamiaMinTimeBeforeNewCheck']);
+        set_option('beamia_max_simultaneous_process', (int) $post['beamiaMaxSimultaneousProcess']);
     }
 
     /**
@@ -261,63 +267,48 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookAfterSaveItem($args)
     {
-        // Currently, update of a record is not managed.
-        if (!$args['insert']) {
-            return;
-        }
-
-        // Create beam records even if the item is not uploaded. 
         $post = $args['post'];
         $item = $args['record'];
-        $status = ($post['BeamiaPostToInternetArchive'] == 1) ?
-            BeamInternetArchiveBeam::STATUS_TO_BEAM_UP :
-            BeamInternetArchiveBeam::STATUS_NOT_TO_BEAM_UP;
         $options = array();
-        $errorMessage = '';
 
-        $beamItem = $this->_setBeamForItem($item);
-        try {
-            $beamItem->setFullBeam();
-        } catch (Exception_BeamInternetArchiveBeam $e) {
-            $errorMessage = $e->getMessage();
-        } catch (Exception_BeamInternetArchiveConnect $e) {
-            $errorMessage = $e->getMessage();
-        }
-        $beamItem->saveWithStatus($status);
-        $options['beams']['item'] = $beamItem->id;
-
-        $files = $item->getFiles();
-        foreach ($files as $key => $file) {
-            $beam = $this->_setBeamForFile($file, $beamItem);
-            try {
-                $beam->setFullBeam();
-            } catch (Exception_BeamInternetArchiveBeam $e) {
-                $errorMessage = $e->getMessage();
-            } catch (Exception_BeamInternetArchiveConnect $e) {
-                $errorMessage = $e->getMessage();
+        // Create beam records even if the item and files are not uploaded.
+        if ($args['insert']) {
+            $beamItem = new BeamInternetArchiveRecord;
+            $beamItem->setBeamForItem($item->id);
+            if ($post['BeamiaPostToInternetArchive'] == 1) {
+                $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+                $options['beams'][$beamItem->id] = $beamItem->id;
             }
-            $beam->saveWithStatus($status);
-            $options['beams'][] = $beam->id;
+
+            $files = $item->getFiles();
+            foreach ($files as $key => $file) {
+                $beam = new BeamInternetArchiveRecord;
+                $beam->setBeamForFile($file->id);
+                if ($post['BeamiaPostToInternetArchive'] == 1) {
+                    $beam->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+                    $options['beams'][$beam->id] = $beam->id;
+                }
+            }
+        }
+        // Update or remove (see status).
+        else {
+            $beamItem = $this->_getBeamForRecord($item);
+            // TODO Currently, change of status is not managed here.
+            $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_UPDATE);
+            $options['beams'][$beamItem->id] = $beamItem->id;
+
+            $files = $item->getFiles();
+            foreach ($files as $key => $file) {
+                $beam = $this->_getBeamForRecord($file);
+                // TODO Currently, change of status is not managed here.
+                $beam->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_UPDATE);
+                $options['beams'][$beam->id] = $beam->id;
+            }
         }
 
-        // In case of error, messages are logged and the job is not launched.
-        if (!empty($errorMessage)) {
-            return;
-        }
-
-        if ($post['BeamiaPostToInternetArchive'] == '1') {
-            // Prepare a job for all these beams.
-            $jobDispatcher = Zend_Registry::get('bootstrap')->getResource('jobs');
-            // Use long running job if server supports it (php-cli with curl).
-            if (get_option('beamia_job_type') == 'long running') {
-                $jobDispatcher->setQueueNameLongRunning('beamia_uploads');
-                $jobDispatcher->sendLongRunning('Job_BeamUploadInternetArchive', $options);
-            }
-            // Standard jobs.
-            else {
-                $jobDispatcher->setQueueName('beamia_uploads');
-                $jobDispatcher->send('Job_BeamUploadInternetArchive', $options);
-            }
+        // Do something after every record save.
+        if (count($options['beams']) > 0) {
+            $this->_prepareJob($options);
         }
     }
 
@@ -340,9 +331,9 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output .= '<div class="info panel">';
         $output .= '<h4>Beam me up to Internet Archive</h4>';
         $output .= '<h5>Status of item</h5>';
-        $output .= $this->_listInternetArchiveLinks();
+        $output .= $this->_listInternetArchiveLinks($item, true);
         $output .= '<h5>Status of files</h5>';
-        $output .= $this->_listInternetArchiveLinksForFiles();
+        $output .= $this->_listInternetArchiveLinksForFiles($item);
         $output .= '</div>';
 
         echo $output;
@@ -360,7 +351,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output = '';
         $output .= '<div class="info panel">';
         $output .= '<h4>Beam me up to Internet Archive</h4>';
-        $output .= $this->_listInternetArchiveLinksForFile();
+        $output .= $this->_listInternetArchiveLinks($file, true);
         $output .= '</div>';
 
         echo $output;
@@ -429,7 +420,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function filterAdminItemsFormTabs($tabs)
     {
-        $tabs['Beam me up to Internet Archive'] = $this->_beamia_form();
+        $tabs['Internet Archive'] = $this->_beamia_form();
         return $tabs;
     }
 
@@ -452,39 +443,56 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
             $output .= '<div>' . __('Please revisit this tab after you save the item to view its Internet Archive links.') . '</div>' . "<br />\n";
         }
         else {
-            $output .= $this->_listInternetArchiveLinks();
-            $output .= $this->_listInternetArchiveLinksForFiles();
+            $output .= $this->_listInternetArchiveLinks($item, true);
+            $output .= $this->_listInternetArchiveLinksForFiles($item);
         }
 
         return $output;
     }
 
     /**
-     * @return string containing IA links for an item.
+     * Return output containing Internet Archive links for a record.
+     *
+     * @param object $record Omeka record (item or file) to get links for.
+     * @param boolean $checkRemoteStatus Check remote status or not.
+     *
+     * @return string containing IA links for a record.
      */
-    private function _listInternetArchiveLinks()
+    private function _listInternetArchiveLinks($record, $checkRemoteStatus = true)
     {
-        $item = get_current_record('item');
-        $beam = $this->_getBeam($item);
+        $beam = $this->_getBeamForRecord($record);
+        if ($checkRemoteStatus
+                && (!$beam->isRemoteChecked() || (time() - strtotime($beam->remote_checked)) >  get_option('beamia_min_time_before_new_check'))
+            ) {
+            $beam->checkRemoteStatus();
+        }
+        if ($checkRemoteStatus) {
+            $beam->checkRemoteStatus();
+        }
+
+        $pendingTasks = $beam->hasPendingTasks();
 
         $output = '';
-        // Update status.
-        $beam->checkRemoteStatus();
-
         $output .= '<div id="beam-list">';
         $output .= '<ul>';
-        $output .= '<li>' . __('Status') . ': ' . link_to_beamia_remote_if_any(__($beam->status), array(), $beam) . '</a>' . '</li>';
-        if ($beam->isNotToBeamUp()) {
-            $output .= '<li>' . __('Remote status') . ': ' . __($beam->remote_status) . '</li>';
+        if ($beam->hasUrl()) {
+            $output .= '<li>' . __('Status') . ': ' . link_to_beamia_remote_if_any(__($beam->status), array(), $beam) . '</a>' . '</li>';
+            $output .= '<li>' . __('Process') . ': <a href="' . $beam->getUrlForTasks() . '" target="_blank">' . __($beam->process) . '</a>';
+            $output .= ' (' . (!empty($pendingTasks) ? __('%d pending tasks', $pendingTasks) : __('No pending tasks')) . ')';
+            $output .= '</li>';
         }
         else {
-            $output .= '<li>' . __('Remote status') . ': <a href="' . $beam->getUrlForTasks() . '" target="_blank">' . __($beam->remote_status) . '</a>';
-            if (isset($beam->remote_metadata->pending_tasks)) {
-                $output .= ' (' . __('%d pending tasks', count($beam->remote_metadata->pending_tasks)) . ')';
-            }
+            $output .= '<li>' . __('Status') . ': ' . __($beam->status) . '</li>';
+            $output .= '<li>' . __('Process') . ': ' . __($beam->process) . '</li>';
         }
 
-        $output .= '</li>';
+        $progressInfo = beamia_getProgress($beam);
+        if (!empty($progressInfo) && $progressInfo['total'] > 0) {
+            $output .= '<li>' . __('Progress: %d of %d bytes.', $progressInfo['progress'], $progressInfo['total']) . '</li>';
+        }
+
+        $output .= beamia_listActions($beam);
+
         $output .= '</ul>';
         $output .= '</div>';
 
@@ -492,22 +500,17 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     }
 
     /**
+     * Output list of Internet Archive links for files attached to an item.
+     *
+     * @param Item $item Omeka item to get links for.
+     *
      * @return string containing IA links for files attached to an item.
      */
-    private function _listInternetArchiveLinksForFiles()
+    private function _listInternetArchiveLinksForFiles($item)
     {
-        $item = get_current_record('item');
-        $beamItem = $this->_getBeam($item);
+        $beamItem = $this->_getBeamForRecord($item);
 
         $output = '';
-        if ($beamItem->isNotToBeamUp()) {
-            $output .= '<div id="beam-list">';
-            $output .= '<ul>';
-            $output .= '<li>' . __($beamItem->status) . '</li>';
-            $output .= '</ul>';
-            $output .= '</div>';
-            return $output;
-        }
 
         if (!metadata($item, 'has files')) {
             $output .= '<div id="beam-list">';
@@ -518,17 +521,17 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
             return $output;
         }
 
-        // Update status of files.
+        // Update status of all files in one check.
         $beamItem->checkRemoteStatusForFilesOfItem();
         $files = $item->getFiles();
 
         $output .= '<div id="beam-files-list">';
         $output .= '<ul>';
         foreach ($files as $file) {
-            $beam = $this->_getBeam($file);
+            $beam = $this->_getBeamForRecord($file);
             $output .= '<li>';
             $output .= link_to_file_show(array('class'=>'show', 'title'=>__('View File Metadata')), null, $file) . ': ';
-            $output .= '<div>' . link_to_beamia_remote_if_any(__($beam->remote_status), array(), $beam) . '</div>';
+            $output .= $this->_listInternetArchiveLinks($file, false);
             $output .= '</li>';
         }
         $output .= '</ul>';
@@ -538,159 +541,42 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     }
 
     /**
-     * @return string containing IA links for one file.
+     * Get a beam for an item or a file. If none exists, create a default one.
+     *
+     * @param Item|File $record Record to get beam record for.
+     *
+     * @return BeamInternetArchiveRecord object.
      */
-    private function _listInternetArchiveLinksForFile()
+    private function _getBeamForRecord($record)
     {
-        $file = get_current_record('file');
-        $beam = $this->_getBeam($file);
-
-        // Update status of files.
-        $beam->checkRemoteStatus();
-
-        $output = '';
-        $output .= '<div>' . link_to_beamia_remote_if_any(__($beam->status), array(), $beam) . '</div>';
-
-        return $output;
-    }
-
-    /**
-     * Build a beam for an item or a file.
-     *
-     * @param Item|File|integer|null $record. If integer, the record id in the
-     *   record type table. If null, get the current record of the recordType.
-     * @param string|null $recordType. If string and record is null, get the
-     *   current record of this type.
-     *
-     * @return beam object.
-     */
-    private function _setBeam($record = null, $recordType = null)
-    {
-        return $this->_getBeam($record, $recordType);
-    }
-
-    /**
-     * Build a beam for an item.
-     *
-     * @param Item|integer|null $item If integer, the item id; if null, the
-     *   current item.
-     *
-     * @return beam object.
-     */
-    private function _setBeamForItem($record = null)
-    {
-        return $this->_getBeamItem($record);
-    }
-
-    /**
-     * Build a beam for a file.
-     *
-     * @param File|integer|null $file If integer, the file id; if null, the
-     *   current file.
-     *
-     * @return beam object.
-     */
-    private function _setBeamForFile($record = null)
-    {
-        return $this->_getBeamFile($record);
-    }
-
-    /**
-     * Get a beam for a item or a file. If no beam exists, create a default one.
-     *
-     * @param Item|File|integer|null $record. If integer, the record id in the
-     *   record type table. If null, get the current record of the recordType.
-     * @param string|null $recordType. If string and record is null, get the
-     *   current record of this type.
-     *
-     * @return beam object.
-     */
-    private function _getBeam($record = null, $recordType = null)
-    {
-        if ($record instanceof Item) {
-            return $this->_getBeamItem($record);
-        }
-
-        if ($record instanceof File) {
-            return $this->_getBeamFile($record);
-        }
-
-        if (is_integer($record)) {
-            if (strtolower($recordType) == 'item') {
-                return $this->_getBeamItem($record);
-            }
-            if (strtolower($recordType) == 'file') {
-                return $this->_getBeamFile($record);
-            }
-        }
-
-        elseif (is_null($record) && !is_null($recordType)) {
-            $record = get_current_record($recordType);
-            return $this->_getBeam($record);
-        }
-
-        throw new Exception_BeamInternetArchiveBeam(__('Beam me up to Internet Archive: Cannot get or create a beam record for anything else than item or file'));
-    }
-
-    /**
-     * Get a beam record for an item. If no beam exists, create a default one.
-     *
-     * @param Item|integer|null $item If integer, the item id; if null, the
-     *   current item.
-     *
-     * @return beam object of the item.
-     */
-    private function _getBeamItem($item = null)
-    {
-        if ($item === null) {
-            $item = get_current_record('item');
-        }
-        elseif (is_integer($item)) {
-            $item = get_record_by_id('item', $item);
-        }
-
-        // Check if a beam exists for this item.
-        $beam = $this->_db->getTable('BeamInternetArchiveBeam')->findByItemId($item->id);
+        // Check if a beam exists for this record.
+        $beam = $this->_db->getTable('BeamInternetArchiveRecord')->findByRecordTypeAndRecordId(get_class($record), $record->id);
 
         // If no beam is found, set default record for item.
         if (empty($beam)) {
-            $beam = new BeamInternetArchiveBeam;
-            $beam->setBeamForItem($item->id);
+            $beam = new BeamInternetArchiveRecord;
+            $beam->setBeam(get_class($record), $record->id);
             $beam->save();
         }
         return $beam;
     }
 
     /**
-     * Get a beam record for a file. If no beam exists, create a default one
-     * for it and for its parent item if needed.
-     *
-     * @param File|integer|null $file If integer, the file id; if null, the
-     *   current file.
-     *
-     * @return beam object of the file.
+     * Prepare and send job if possible.
      */
-    private function _getBeamFile($file = null)
+    private function _prepareJob($options = array())
     {
-        if ($file === null) {
-            $file = get_current_record('file');
+        // Prepare a job for all these beams.
+        $jobDispatcher = Zend_Registry::get('bootstrap')->getResource('jobs');
+        // Use long running job if server supports it (php-cli with curl).
+        if (get_option('beamia_job_type') == 'long running') {
+            $jobDispatcher->setQueueNameLongRunning('beamia_uploads');
+            $jobDispatcher->sendLongRunning('Job_BeamUploadInternetArchive', $options);
         }
-        elseif (is_integer($file)) {
-            $file = get_record_by_id('file', $file);
+        // Standard jobs.
+        else {
+            $jobDispatcher->setQueueName('beamia_uploads');
+            $jobDispatcher->send('Job_BeamUploadInternetArchive', $options);
         }
-
-        // Check if a beam exists for this file.
-        $beam = $this->_db->getTable('BeamInternetArchiveBeam')->findByFileId($file->id);
-
-        // If no beam is found, set default record for file.
-        if (empty($beam)) {
-            // Check if a beam record exists for the parent item.
-            $beamItem = $this->_getBeamItem($file->item_id);
-
-            $beam = new BeamInternetArchiveBeam;
-            $beam->setBeamForFileWithRequiredBeamId($file->id, $beamItem->id);
-            $beam->save();
-        }
-        return $beam;
     }
 }

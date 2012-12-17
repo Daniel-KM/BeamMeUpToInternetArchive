@@ -21,74 +21,60 @@
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
                     'items_public' => 1,
                 )); ?>"><?php
-                echo __('L: %s', __('Public')); ?></a></li>
+                echo __('St: %s', __('Public')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
                     'items_public' => 0,
                 )); ?>"><?php
-                echo __('L: %s', __('Private')); ?></a></li>
+                echo __('St: %s', __('Private')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => BeamInternetArchiveBeam::STATUS_NOT_TO_BEAM_UP,
+                    'status' => BeamInternetArchiveRecord::STATUS_NOT_TO_BEAM_UP,
                 )); ?>"><?php
-                echo __('L: %s', __('Not to beam up')); ?></a></li>
+                echo __('St: %s', __('Not to beam up')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => BeamInternetArchiveBeam::STATUS_TO_BEAM_UP,
+                    'status' => BeamInternetArchiveRecord::STATUS_TO_BEAM_UP,
                 )); ?>"><?php
-                echo __('L: %s', __('To beam up')); ?></a></li>
+                echo __('St: %s', __('To beam up')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => BeamInternetArchiveBeam::STATUS_COMPLETED,
+                    'status' => BeamInternetArchiveRecord::STATUS_TO_UPDATE,
                 )); ?>"><?php
-                echo __('L: %s', __('Completed')); ?></a></li>
+                echo __('St: %s', __('To update')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_REMOTE,
+                    'status' => BeamInternetArchiveRecord::STATUS_TO_REMOVE,
                 )); ?>"><?php
-                echo __('L: %s', __('Waiting IA')); ?></a></li>
+                echo __('St: %s', __('To remove')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => array(
-                        BeamInternetArchiveBeam::STATUS_IN_PROGRESS,
-                        BeamInternetArchiveBeam::STATUS_UPDATING,
-                        BeamInternetArchiveBeam::STATUS_DELETING,
+                    'public' => BeamInternetArchiveRecord::IS_PUBLIC,
+                )); ?>"><?php
+                echo __('IA: %s', __('Public')); ?></a></li>
+            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
+                    'public' => BeamInternetArchiveRecord::IS_PRIVATE,
+                )); ?>"><?php
+                echo __('IA: %s', __('Private')); ?></a></li>
+            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
+                    'Process' => BeamInternetArchiveRecord::PROCESS_COMPLETED,
+                )); ?>"><?php
+                echo __('Pr: %s', __('Completed')); ?></a></li>
+            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
+                    'process' => array(
+                        BeamInternetArchiveRecord::PROCESS_QUEUED,
+                        BeamInternetArchiveRecord::PROCESS_QUEUED_WAITING_BUCKET,
                     ),
                 )); ?>"><?php
-                echo __('L: %s', __('In progress')); ?></a></li>
+                echo __('Pr: %s', __('Queued')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => array(
-                        BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP,
-                        BeamInternetArchiveBeam::STATUS_ERROR,
+                    'process' => array(
+                        BeamInternetArchiveRecord::PROCESS_IN_PROGRESS,
+                        BeamInternetArchiveRecord::PROCESS_IN_PROGRESS_WAITING_REMOTE,
                     ),
                 )); ?>"><?php
-                echo __('L: %s', __('Failed')); ?></a></li>
+                echo __('Pr: %s', __('In progress')); ?></a></li>
             <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'status' => BeamInternetArchiveBeam::STATUS_DELETED,
+                    'process' => array(
+                        BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION,
+                        BeamInternetArchiveRecord::PROCESS_FAILED_RECORD,
+                    ),
                 )); ?>"><?php
-                echo __('L: %s', __('Deleted')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'public' => BeamInternetArchiveBeam::IS_PUBLIC,
-                )); ?>"><?php
-                echo __('R: %s', __('Public')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'public' => BeamInternetArchiveBeam::IS_PRIVATE,
-                )); ?>"><?php
-                echo __('R: %s', __('Private')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'remote_status' => BeamInternetArchiveBeam::REMOTE_NOT_APPLICABLE,
-                )); ?>"><?php
-                echo __('R: %s', __('Not applicable')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'remote_status' => BeamInternetArchiveBeam::REMOTE_IN_PROGRESS,
-                )); ?>"><?php
-                echo __('R: %s', __('In progress')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'remote_status' => BeamInternetArchiveBeam::REMOTE_READY,
-                )); ?>"><?php
-                echo __('R: %s', __('Ready')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'remote_status' => BeamInternetArchiveBeam::REMOTE_CHECK_FAILED,
-                )); ?>"><?php
-                echo __('R: %s', __('Check failed')); ?></a></li>
-            <li><a href="<?php echo url('beam-me-up-to-internet-archive/index/browse', array(
-                    'remote_status' => BeamInternetArchiveBeam::REMOTE_NO_BUCKET,
-                )); ?>"><?php
-                echo __('R: %s', __('Failed')); ?></a></li>
+                echo __('Pr: %s', __('Failed')); ?></a></li>
         </ul>
     </li>
 </ul>

@@ -7,11 +7,14 @@
  */
 class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_AbstractActionController
 {
+    // List of beam records to process.
+    private $_beams = array();
+
     public function init()
     {
         // Set the model class so this controller can perform some functions,
         // such as $this->findById()
-        $this->_helper->db->setDefaultModelName('BeamInternetArchiveBeam');
+        $this->_helper->db->setDefaultModelName('BeamInternetArchiveRecord');
     }
 
     /**
@@ -71,210 +74,143 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
 
     public function beamMeUpAction()
     {
-        $request = Zend_Controller_Front::getInstance()->getRequest();
-        $id = parse_url($request->getRequestUri(), PHP_URL_PATH);
-        $id = pathinfo($id, PATHINFO_FILENAME);
-        $beam = get_record_by_id('BeamInternetArchiveBeam', $id);
+        $this->_prepareRecord(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+    }
+
+    public function updateAction()
+    {
+        $this->_prepareRecord(BeamInternetArchiveRecord::STATUS_TO_UPDATE);
+    }
+
+    public function removeAction()
+    {
+        $this->_prepareRecord(BeamInternetArchiveRecord::STATUS_TO_REMOVE);
+    }
+
+    public function _prepareRecord($status = BeamInternetArchiveRecord::STATUS_TO_BEAM_UP)
+    {
+        $beam = $this->_getRequestedRecord();
         if (!$beam) {
             throw new Omeka_Controller_Exception_404;
         }
-        $this->view->assign(array('BeamInternetArchiveBeam' => $beam));
 
-        $errorMessage = '';
-
-        switch ($beam->status) {
-            // Reset record with error or set new record to beam up.
-            case BeamInternetArchiveBeam::STATUS_NOT_TO_BEAM_UP:
-            case BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP:
-            case BeamInternetArchiveBeam::STATUS_ERROR:
-                // For a file, check parent record and change status if needed.
-                if ($beam->isBeamForFile()) {
-                    $beamItem = get_record_by_id('BeamInternetArchiveBeam', $beam->required_beam_id);
-                    switch ($beamItem->status) {
-                        // Reset record with error or set new record to beam up.
-                        case BeamInternetArchiveBeam::STATUS_TO_DELETE:
-                        case BeamInternetArchiveBeam::STATUS_DELETING:
-                        case BeamInternetArchiveBeam::STATUS_DELETED:
-                            $message = __('This file cannot be beamed up, because status of parent item is "%s".', $beamItem->status);
-                            $this->_helper->flashMessenger($message, 'error');
-                            break 2;
-                    }
-                }
-
-                // Parent is ready, so prepare this record to be beamed up.
-                $beam->saveWithStatus(BeamInternetArchiveBeam::STATUS_TO_BEAM_UP);
-                $message = __('Before to beam up, status of this record was: "%s".', $beam->status);
-                $this->_helper->flashMessenger($message, 'info');
-                // Continue to switch cases, because we update status.
-            case BeamInternetArchiveBeam::STATUS_TO_BEAM_UP:
-            case BeamInternetArchiveBeam::STATUS_TO_BEAM_UP_WAITING_BUCKET:
-                // Finish to prepare the beam.
-                try {
-                    $beam->setFullBeam();
-                } catch (Exception_BeamInternetArchiveBeam $e) {
-                    $errorMessage = $e->getMessage();
-                } catch (Exception_BeamInternetArchiveConnect $e) {
-                    $errorMessage = $e->getMessage();
-                }
-                $beam->save();
-                // In case of error, messages are logged and the job is not launched.
-                if (!empty($errorMessage)) {
-                    $message = __('This file cannot be beamed up.' . " \n" . $errorMessage);
-                    $this->_helper->flashMessenger($message, 'error');
-                    break;
-                }
-
-                $result = $this->_beamMeUp();
-                // Reload record to update it.
-                $beam = get_record_by_id('BeamInternetArchiveBeam', $beam->id);
-                if ($result == false && !$beam->isRemoteStatusCheckable()) {
-                    $message = __('Error when beaming up this record:')
-                        . ' ' . __('Current local status is: "%s".', $beam->status)
-                        . ' ' . __('Current remote status is: "%s".', $beam->remote_status)
-                        . ' ' . __('Check your connection or see logs for details.');
-                    $this->_helper->flashMessenger($message, 'error');
-                }
-                else {
-                    $message = __('Succeed to beam up this record:')
-                        . ' ' . __('Current local status is "%s".', $beam->status)
-                        . ' ' . __('Current remote status is "%s".', $beam->remote_status);
-                    $this->_helper->flashMessenger($message, 'success');
-                }
-                break;
-            case BeamInternetArchiveBeam::STATUS_COMPLETED:
-            case BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_REMOTE:
-                $beam->checkRemoteStatus();
-                $message = __('This record is already beamed up.')
-                    . ' ' . __('Current local status is "%s".', $beam->status)
-                    . ' ' . __('Current remote status is "%s".', $beam->remote_status);
-                $this->_helper->flashMessenger($message);
-                break;
-            case BeamInternetArchiveBeam::STATUS_IN_PROGRESS:
-            case BeamInternetArchiveBeam::STATUS_UPDATING:
-            case BeamInternetArchiveBeam::STATUS_DELETING:
-                $beam->checkRemoteStatus();
-                $message = __('This record is currently beaming up.')
-                    . ' ' . __('Current local status is "%s".', $beam->status)
-                    . ' ' . __('Current remote status is "%s".', $beam->remote_status);
-                $this->_helper->flashMessenger($message);
-                break;
-
-            // TODO In a future release.
-            case BeamInternetArchiveBeam::STATUS_TO_UPDATE:
-                $message = __('Updating a record is not managed currently.');
-                $this->_helper->flashMessenger($message, 'alert');
-                break;
-            // Note: To delete a bucket is not allowed on Internet Archive.
-            case BeamInternetArchiveBeam::STATUS_TO_DELETE:
-                $message = __('Deleting a record is not managed currently.');
-                $this->_helper->flashMessenger($message, 'alert');
-                break;
-            case BeamInternetArchiveBeam::STATUS_DELETED:
-                $message = __('Deleting a record is not managed currently.');
-                $this->_helper->flashMessenger($message, 'alert');
-                break;
-            default:
+        if (!$beam->hasRecord() && $status != BeamInternetArchiveRecord::STATUS_TO_REMOVE) {
+            $message = __('%s #%d is deleted from the base. You can only remove it.', $beam->record_type, $beam->record_id);
+            $message = __('Beam me up to Internet Archive: %s', $message);
+            $this->_helper->flashMessenger($message);
+            $this->_helper->redirector->goto('browse');
+            return;
         }
 
+        // Required beam records are automatically added if needed.
+        $this->_queueBeam($beam, $status);
+
+        // Do this check after that status are set.
+        if ($beam->hasPendingTasks() && $beam->isToUpdateOrToRemove()) {
+            $message = __('Process is postponed for %s #%d: tasks are pending.', $beam->record_type, $beam->record_id);
+            $message = __('Beam me up to Internet Archive: %s', $message);
+            $this->_helper->flashMessenger($message);
+            $this->_helper->redirector->goto('browse');
+            return;
+        }
+
+        $this->_prepareJob();
+
+        // Redirect to the page of the beamed up record.
         $pluralName = $this->view->pluralize(strtolower($beam->record_type));
         $this->_helper->redirector->gotoUrl($pluralName . '/show/' . $beam->record_id);
     }
 
-    private function _beamMeUp()
+    /**
+     * Batch processing of records.
+     *
+     * @return void.
+     */
+    public function batchEditAction()
     {
-        $beam = $this->view->BeamInternetArchiveBeam;
-
-        $options = array();
-        $errorMessage = '';
-
-        if ($beam->isBeamForItem()) {
-            $options['beams']['item'] = $beam->id;
+        $beamIds = $this->_getParam('beams');
+        if (empty($beamIds)) {
+            $this->_helper->flashMessenger(__('You must choose some records to batch process them.'), 'error');
+            $this->_helper->redirector->goto('browse');
+            return;
         }
-        // For a file, check parent record and change status if needed.
+        $this->view->assign(compact('beamIds'));
+
+        if ($this->_getParam('submit-batch-beam-up')) {
+            $status = BeamInternetArchiveRecord::STATUS_TO_BEAM_UP;
+            $message = __('Selected records are queued to be beamed up or updated.');
+        }
+        elseif ($this->_getParam('submit-batch-remove')) {
+            $status = BeamInternetArchiveRecord::STATUS_TO_REMOVE;
+            $message = __('Selected records are queued to be removed.');
+        }
         else {
-            $beamItem = get_record_by_id('BeamInternetArchiveBeam', $beam->required_beam_id);
-            switch ($beamItem->status) {
-                // Reset record with error or set new record to beam up.
-                case BeamInternetArchiveBeam::STATUS_NOT_TO_BEAM_UP:
-                case BeamInternetArchiveBeam::STATUS_FAILED_TO_BEAM_UP:
-                case BeamInternetArchiveBeam::STATUS_ERROR:
-                    $beamItem->saveWithStatus(BeamInternetArchiveBeam::STATUS_TO_BEAM_UP);
-                    $message = __('Before to beam up this file, status of the parent item was: "%s".', $beamItem->status);
-                    $this->_helper->flashMessenger($message, 'info');
-                    // Check will be done by job.
-                    $options['beams']['item'] = $beamItem->id;
-                    break;
-                case BeamInternetArchiveBeam::STATUS_TO_BEAM_UP:
-                case BeamInternetArchiveBeam::STATUS_TO_BEAM_UP_WAITING_BUCKET:
-                    // Finish to prepare the beam.
-                    try {
-                        $beamItem->setFullBeam();
-                    } catch (Exception_BeamInternetArchiveBeam $e) {
-                        $errorMessage = $e->getMessage();
-                    } catch (Exception_BeamInternetArchiveConnect $e) {
-                        $errorMessage = $e->getMessage();
-                    }
-                    $beamItem->save();
-                    // Check will be done by job.
-                    $options['beams']['item'] = $beamItem->id;
-
-                    // Beam is updated because parent beam has been updated too.
-                    try {
-                        $beam->setFullBeam();
-                    } catch (Exception_BeamInternetArchiveBeam $e) {
-                        $errorMessage = $e->getMessage();
-                    } catch (Exception_BeamInternetArchiveConnect $e) {
-                        $errorMessage = $e->getMessage();
-                    }
-                    $beam->save();
-                    break;
-                case BeamInternetArchiveBeam::STATUS_IN_PROGRESS:
-                case BeamInternetArchiveBeam::STATUS_COMPLETED_WAITING_REMOTE:
-                case BeamInternetArchiveBeam::STATUS_COMPLETED:
-                case BeamInternetArchiveBeam::STATUS_UPDATING:
-                case BeamInternetArchiveBeam::STATUS_TO_UPDATE:
-                    // Check will be done by job.
-                    $options['beams']['item'] = $beamItem->id;
-                    break;
-                case BeamInternetArchiveBeam::STATUS_TO_DELETE:
-                case BeamInternetArchiveBeam::STATUS_DELETING:
-                case BeamInternetArchiveBeam::STATUS_DELETED:
-                    $message = __('Status of parent item is deleting. This file cannot be beamed up.');
-                    $this->_helper->flashMessenger($message, 'error');
-                    return false;
-            }
-            $options['beams'][] = $beam->id;
-        }
-
-        $message = __('A background job is launched for this record.')
-            . ' ' . __('See its result in the Internet Archive menu or directly in the record view.');
-        $this->_helper->flashMessenger($message);
-
-        // In case of error, messages are logged and the job is not launched.
-        if (!empty($errorMessage)) {
-            $message = __('This record cannot be beamed up.' . " \n" . $errorMessage);
-            $this->_helper->flashMessenger($message, 'error');
+            $this->_helper->flashMessenger(__('You must choose the process to batch.'), 'error');
+            $this->_helper->redirector->goto('browse');
             return;
         }
 
-        // Prepare a job for the beam.
-        $jobDispatcher = Zend_Registry::get('bootstrap')->getResource('jobs');
-        // Use long running job if server supports it (php-cli with curl).
-        if (get_option('beamia_job_type') == 'long running') {
-            $jobDispatcher->setQueueNameLongRunning('beamia_uploads');
-            $jobDispatcher->sendLongRunning('Job_BeamUploadInternetArchive', $options);
+        foreach ($beamIds as $key => $beamId) {
+            $beam = get_record_by_id('BeamInternetArchiveRecord', $beamId);
+            if ($beam) {
+                // Queue only a record that has a record or is to be removed.
+                if ($beam->hasRecord() || $status == BeamInternetArchiveRecord::STATUS_TO_REMOVE) {
+                    // Required beam records are automatically added if needed.
+                    $this->_queueBeam($beam, $status);
+                }
+            }
         }
-        // Standard jobs.
+
+        $message = __('Beam me up to Internet Archive: %s', $message);
+        $this->_helper->flashMessenger($message);
+
+        $this->_prepareJob();
+
+        $this->_helper->redirector->goto('browse');
+    }
+
+    /**
+     * Batch processing of queued records (automatically selected).
+     *
+     * @return void.
+     */
+    public function batchQueueAction()
+    {
+        // Process queued records.
+        if ($this->_getParam('submit-batch-queue')) {
+            // TODO Complete params with sort.
+            $beams = get_records('BeamInternetArchiveRecord', array('process' => array(
+                BeamInternetArchiveRecord::PROCESS_QUEUED_WAITING_BUCKET,
+                BeamInternetArchiveRecord::PROCESS_QUEUED,
+            )), get_option('beamia_max_simultaneous_process'));
+
+            foreach ($beams as $key => $beam) {
+                $this->_beams[$beam->id] = $beam->id;
+            }
+        }
+
+        // Process failed records.
         else {
-            $jobDispatcher->setQueueName('beamia_uploads');
-            $jobDispatcher->send('Job_BeamUploadInternetArchive', $options);
+            // TODO Complete params with sort.
+            $beams = get_records('BeamInternetArchiveRecord', array('process' => array(
+                BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION,
+                BeamInternetArchiveRecord::PROCESS_FAILED_RECORD,
+            )), get_option('beamia_max_simultaneous_process'));
+
+            foreach ($beams as $key => $beam) {
+                $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_QUEUED);
+                $this->_beams[$beam->id] = $beam->id;
+            }
         }
+
+        $this->_prepareJob();
+
+        $this->_helper->redirector->goto('browse');
     }
 
     /**
      * Goes to results page based off value in text input.
      */
-
     public function paginationAction()
     {
         $pageNumber = (int)$_POST['page'];
@@ -298,5 +234,118 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
     public function search_filters(array $params = null)
     {
         return get_view()->itemSearchFilters($params);
+    }
+
+    /**
+     * Get the requested beam and assign it if any.
+     *
+     * @return BeamInternetArchiveRecord object.
+     */
+    private function _getRequestedRecord()
+    {
+        $request = Zend_Controller_Front::getInstance()->getRequest();
+        $id = parse_url($request->getRequestUri(), PHP_URL_PATH);
+        $id = pathinfo($id, PATHINFO_FILENAME);
+        $beam = get_record_by_id('BeamInternetArchiveRecord', $id);
+        if ($beam) {
+            $this->view->assign(array('BeamInternetArchiveRecord' => $beam));
+        }
+        return $beam;
+    }
+
+    /**
+     * Get a beam for an item or a file. If none exists, create a default one.
+     *
+     * @param Item|File $record Record to get beam record for.
+     *
+     * @return BeamInternetArchiveRecord object.
+     */
+    private function _getBeamForRecord($record)
+    {
+        // Check if a beam exists for this record.
+        $beam = $this->_db->getTable('BeamInternetArchiveRecord')->findByRecordTypeAndRecordId(get_class($record), $record->id);
+
+        // If no beam is found, set default record for item.
+        if (empty($beam)) {
+            $beam = new BeamInternetArchiveRecord;
+            $beam->setBeam(get_class($record), $record->id);
+            $beam->save();
+        }
+        return $beam;
+    }
+
+    /**
+     * Prepare a beam record.
+     *
+     * @param BeamInternetArchiveRecord $beam Record to prepare.
+     * @param string $status Status to set.
+     *
+     * @return void.
+     */
+    private function _queueBeam($beam, $status = BeamInternetArchiveRecord::STATUS_TO_BEAM_UP)
+    {
+        // The status will be automatically set to 'to update' if the record is
+        // already beamed up. The process will be automatically set to queue.
+        $beam->saveWithStatus($status);
+        $this->_beams[$beam->id] = $beam->id;
+
+        switch ($status) {
+            case BeamInternetArchiveRecord::STATUS_TO_BEAM_UP:
+            case BeamInternetArchiveRecord::STATUS_TO_UPDATE:
+                // Set the parent record if needed (no update).
+                if (!empty($beam->required_beam_id)) {
+                    $beamItem = get_record_by_id('BeamInternetArchiveRecord', $beam->required_beam_id);
+                    if (!$beamItem->isBeamedUp()) {
+                        $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+                        $this->_beams[$beamItem->id] = $beamItem->id;
+                    }
+                }
+                break;
+
+            case BeamInternetArchiveRecord::STATUS_TO_REMOVE:
+                // Remove all files attached to item if needed.
+                if ($beam->isBeamForItem()) {
+                    // Warning: don't use item->getFiles(), because item may be deleted.
+                    $beamFiles = $this->_db->getTable('BeamInternetArchiveRecord')->findBeamsOfFilesByItemId($beam->record_id);
+                    foreach ($beamFiles as $key => $beamFile) {
+                        $beamFile->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_REMOVE);
+                        $this->_beams[$beamFile->id] = $beamFile->id;
+                    }
+                }
+                break;
+        }
+    }
+
+    /**
+     * Prepare and send job if possible.
+     */
+    private function _prepareJob() {
+        if (count($this->_beams) == 0) {
+            $message = __('No beam record to process.');
+            $message = __('Beam me up to Internet Archive: %s', $message);
+            $this->_helper->flashMessenger($message);
+            return;
+        }
+
+        $message = __('A background job is launched.')
+            . ' ' . __('See its result in the Internet Archive menu or directly in the record view.');
+        $message = __('Beam me up to Internet Archive: %s', $message);
+        $this->_helper->flashMessenger($message);
+
+        $options = array();
+        $options['beams'] = $this->_beams;
+
+        // Prepare a job for all these beams.
+        $jobDispatcher = Zend_Registry::get('bootstrap')->getResource('jobs');
+        // Use long running job if server supports it (php-cli with curl).
+        if (get_option('beamia_job_type') == 'long running') {
+            $jobDispatcher->setQueueNameLongRunning('beamia_uploads');
+            $jobDispatcher->sendLongRunning('Job_BeamUploadInternetArchive', $options);
+        }
+        // Standard jobs.
+        else {
+            $jobDispatcher->setQueueName('beamia_uploads');
+            $jobDispatcher->send('Job_BeamUploadInternetArchive', $options);
+        }
     }
 }

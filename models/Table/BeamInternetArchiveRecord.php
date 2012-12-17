@@ -3,7 +3,7 @@
 /**
  * The table for Beam me up to Internet Archive records.
  */
-class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
+class Table_BeamInternetArchiveRecord extends Omeka_Db_Table
 {
     /**
      * Can specify a range of valid beamed record ids or an individual id.
@@ -31,12 +31,12 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
                 $start  = (int) trim($start);
                 $finish = (int) trim($finish);
 
-                $wheres[] = "(beam_internet_archive_beams.id BETWEEN $start AND $finish)";
+                $wheres[] = "(beam_internet_archive_records.id BETWEEN $start AND $finish)";
 
                 // It is a single id.
             } else {
                 $id = (int) trim($expr);
-                $wheres[] = "(beam_internet_archive_beams.id = $id)";
+                $wheres[] = "(beam_internet_archive_records.id = $id)";
             }
         }
 
@@ -54,7 +54,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      */
     public function filterByRecordType($select, $recordType)
     {
-        $select->where('beam_internet_archive_beams.record_type = ?', $recordType);
+        $select->where('beam_internet_archive_records.record_type = ?', $recordType);
     }
 
     /**
@@ -67,10 +67,10 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     public function filterByStatus($select, $status)
     {
         if (is_array($status)) {
-            $select->where('beam_internet_archive_beams.status in (?)', $status);
+            $select->where('beam_internet_archive_records.status in (?)', $status);
         }
         else {
-            $select->where('beam_internet_archive_beams.status = ?', $status);
+            $select->where('beam_internet_archive_records.status = ?', $status);
         }
     }
 
@@ -81,13 +81,13 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      * @param array|string $remoteStatus Remote status to filter by.
      * @return void
      */
-    public function filterByRemoteStatus($select, $remoteStatus)
+    public function filterByProcess($select, $process)
     {
-        if (is_array($remoteStatus)) {
-            $select->where('beam_internet_archive_beams.remote_status in (?)', $remoteStatus);
+        if (is_array($process)) {
+            $select->where('beam_internet_archive_records.process in (?)', $process);
         }
         else {
-            $select->where('beam_internet_archive_beams.remote_status = ?', $remoteStatus);
+            $select->where('beam_internet_archive_records.process = ?', $process);
         }
     }
 
@@ -101,9 +101,9 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     public function filterByPublic($select, $isPublic)
     {
         if ($isPublic) {
-            $select->where('beam_internet_archive_beams.public = ' . BeamInternetArchiveBeam::IS_PUBLIC);
+            $select->where('beam_internet_archive_records.public = ' . BeamInternetArchiveRecord::IS_PUBLIC);
         } else {
-            $select->where('beam_internet_archive_beams.public = ' . BeamInternetArchiveBeam::IS_PRIVATE);
+            $select->where('beam_internet_archive_records.public = ' . BeamInternetArchiveRecord::IS_PRIVATE);
         }
     }
 
@@ -117,7 +117,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     {
         $select->joinInner(
             array('items' => $this->getDb()->Items),
-            "beam_internet_archive_beams.record_type = 'Item' AND beam_internet_archive_beams.record_id = items.id",
+            "beam_internet_archive_records.record_type = 'Item' AND beam_internet_archive_records.record_id = items.id",
             array());
     }
 
@@ -131,7 +131,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     {
         $select->joinInner(
             array('files' => $this->getDb()->Items),
-            "beam_internet_archive_beams.record_type = 'File' AND beam_internet_archive_beams.record_id = files.id",
+            "beam_internet_archive_records.record_type = 'File' AND beam_internet_archive_records.record_id = files.id",
             array());
     }
 
@@ -271,16 +271,16 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
                     }
                     break;
 
-                case 'remote_status':
+                case 'process':
                     $alnum = new Zend_Filter_Alnum(true);
                     if (is_array($paramValue)) {
                         foreach ($paramValue as $key => $value) {
                             $paramValue[$key] = $alnum->filter($value);
                         }
-                        $this->filterByRemoteStatus($select, $paramValue);
+                        $this->filterByProcess($select, $paramValue);
                     }
                     else {
-                        $this->filterByRemoteStatus($select, $alnum->filter($paramValue));
+                        $this->filterByProcess($select, $alnum->filter($paramValue));
                     }
                     break;
 
@@ -314,7 +314,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
         // $this->filterBySearch($select, $params);
 
         // If we are returning the data itself, we need to group by the beam ID.
-        $select->group('beam_internet_archive_beams.id');
+        $select->group('beam_internet_archive_records.id');
     }
 
     /**
@@ -352,7 +352,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      * Retrieve a single record given an ID.
      *
      * @param integer $id
-     * @return BeamInternetArchiveBeam|false
+     * @return BeamInternetArchiveRecord|false
      */
     public function find($id)
     {
@@ -363,7 +363,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      * Find rows for multiple ids.
      *
      * @param array $ids
-     * @return array of BeamInternetArchiveBeam record.
+     * @return array of BeamInternetArchiveRecord record.
      */
     public function findMultiple($ids)
     {
@@ -403,22 +403,22 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      * Find a row for an item by item id.
      *
      * @param integer $itemId
-     * @return BeamInternetArchiveBeam record|null.
+     * @return BeamInternetArchiveRecord record|null.
      */
     public function findByItemId($itemId)
     {
-        return $this->findByRecordTypeAndRecordId('Item', $itemId);
+        return $this->findByRecordTypeAndRecordId(BeamInternetArchiveRecord::RECORD_TYPE_ITEM, $itemId);
     }
 
     /**
      * Find a row for a file by file id.
      *
      * @param integer $fileId
-     * @return BeamInternetArchiveBeam record|null.
+     * @return BeamInternetArchiveRecord record|null.
      */
     public function findByFileId($fileId)
     {
-        return $this->findByRecordTypeAndRecordId('File', $fileId);
+        return $this->findByRecordTypeAndRecordId(BeamInternetArchiveRecord::RECORD_TYPE_FILE, $fileId);
     }
 
     /**
@@ -426,7 +426,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      *
      * @param string $recordType
      * @param integer $recordId
-     * @return BeamInternetArchiveBeam record|null.
+     * @return BeamInternetArchiveRecord record|null.
      */
     public function findByRecordTypeAndRecordId($recordType, $recordId)
     {
@@ -441,7 +441,7 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
      * Find a row for an item by a file id.
      *
      * @param integer $fileId
-     * @return BeamInternetArchiveBeam record|null.
+     * @return BeamInternetArchiveRecord record|null.
      * @todo To be improved with one request.
      */
     public function findBeamOfItemByFileId($fileId)
@@ -496,7 +496,6 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     private function _unserialize($record)
     {
         if ($record) {
-            $record->settings = unserialize($record->settings);
             $record->remote_metadata = json_decode($record->remote_metadata);
         }
         return $record;
@@ -512,7 +511,6 @@ class Table_BeamInternetArchiveBeam extends Omeka_Db_Table
     {
         if (is_array($records)) {
             foreach ($records as $key => $record) {
-                $record->settings = unserialize($record->settings);
                 $record->remote_metadata = json_decode($record->remote_metadata);
                 $records[$key] = $record;
             }
