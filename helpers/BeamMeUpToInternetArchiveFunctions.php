@@ -10,7 +10,7 @@
  *
  * @return string HTML
  */
-function link_to_beamia($text = null, $props = array(), $action = 'beam-me-up', $beam = null)
+function beamia_link_to($text = null, $props = array(), $action = 'beam-me-up', $beam = null)
 {
     if (!$beam) {
         $beam = get_current_record('BeamInternetArchiveRecord');
@@ -35,7 +35,7 @@ function link_to_beamia($text = null, $props = array(), $action = 'beam-me-up', 
  *
  * @return string HTML
  */
-function link_to_beamia_url_if_any($url, $text = null, $props = array('target' => '_blank'), $beam = null)
+function beamia_link_to_url_if_any($url, $text = null, $props = array('target' => '_blank'), $beam = null)
 {
     if (!$beam) {
         $beam = get_current_record('BeamInternetArchiveRecord');
@@ -59,10 +59,10 @@ function link_to_beamia_url_if_any($url, $text = null, $props = array('target' =
  *
  * @return string HTML
  */
-function link_to_beamia_remote_if_any($text = null, $props = array('target' => '_blank'), $beam = null)
+function beamia_link_to_remote_if_any($text = null, $props = array('target' => '_blank'), $beam = null)
 {
     $url = $beam->getUrlRemote();
-    return link_to_beamia_url_if_any($url, $text, $props, $beam);
+    return beamia_link_to_url_if_any($url, $text, $props, $beam);
 }
 
 /**
@@ -76,10 +76,10 @@ function link_to_beamia_remote_if_any($text = null, $props = array('target' => '
  *
  * @return string HTML
  */
-function link_to_beamia_tasks_if_any($text = null, $props = array('target' => '_blank'), $beam = null)
+function beamia_link_to_tasks_if_any($text = null, $props = array('target' => '_blank'), $beam = null)
 {
     $url = $beam->getUrlForTasks();
-    return link_to_beamia_url_if_any($url, $text, $props, $beam);
+    return beamia_link_to_url_if_any($url, $text, $props, $beam);
 }
 
 /**
@@ -101,18 +101,18 @@ function beamia_listActions($beam = null)
     $output = '';
 
     if (!$beam->hasRecord()) {
-        $output .= '<li>' . link_to_beamia(__('Remove'), array(), 'remove', $beam) . '</li>';
+        $output .= '<li>' . beamia_link_to(__('Remove'), array(), 'remove', $beam) . '</li>' . PHP_EOL;
     }
     // It's always possible to set a record to be beamed up for the first time.
     elseif (!empty($pendingTasks) && $beam->isToUpdateOrToRemove()) {
-        $output .= '<li>' . __('Wait %d pending tasks before a new process.', $pendingTasks) . '</li>';
+        $output .= '<li>' . __('Wait %d pending tasks', $pendingTasks) . '</li>' . PHP_EOL;
     }
     elseif (!$beam->isToUpdateOrToRemove()) {
-        $output .= '<li>' . link_to_beamia(__('Beam me up'), array(), 'beam-me-up', $beam) . '</li>';
+        $output .= '<li>' . beamia_link_to(__('Beam me up'), array(), 'beam-me-up', $beam) . '</li>' . PHP_EOL;
     }
     else {
-        $output .= '<li>' . link_to_beamia(__('Update'), array(), 'update', $beam) . '</li>';
-        $output .= '<li>' . link_to_beamia(__('Remove'), array(), 'remove', $beam) . '</li>';
+        $output .= '<li>' . beamia_link_to(__('Update'), array(), 'update', $beam) . '</li>' . PHP_EOL;
+        $output .= '<li>' . beamia_link_to(__('Remove'), array(), 'remove', $beam) . '</li>' . PHP_EOL;
     }
 
     return $output;
@@ -153,22 +153,26 @@ function beamia_getProgress($beam = null)
         $beam = get_current_record('BeamInternetArchiveRecord');
     }
 
-    if (!isset($_SESSION['BeamUploadInternetArchive']['curls'][$beam->id])) {
+
+    $session = new Zend_Session_Namespace('BeamMeUpToInternetArchive');
+    if (!isset($session->beams[$beam->id])
+            || !isset($session->beams[$beam->id]['finish'])
+        ) {
         return array();
     }
 
-    $curlArray = $_SESSION['BeamUploadInternetArchive']['curls'][$beam->id];
-    if ($curlArray['downloadTotal'] + $curlArray['uploadTotal'] == 0) {
+    $beamArray = $session->beams[$beam->id];
+    if ($beamArray['downloadTotal'] + $beamArray['uploadTotal'] == 0) {
         $progress = 0;
         $total = 0;
     }
-    elseif ($curlArray['uploadTotal'] > 0) {
-        $progress = round($curlArray['uploadNow'] * 100 / $curlArray['uploadTotal']);
-        $total = $uploadTotal;
+    elseif ($beamArray['uploadTotal'] > 0) {
+        $progress = round($beamArray['uploadNow'] * 100 / $beamArray['uploadTotal']);
+        $total = $beamArray['uploadTotal'];
     }
-    elseif ($curlArray['downloadTotal'] > 0) {
-        $progress = round($curlArray['downloadNow'] * 100 / $curlArray['downloadTotal']);
-        $total = $downloadTotal;
+    elseif ($beamArray['downloadTotal'] > 0) {
+        $progress = round($beamArray['downloadNow'] * 100 / $beamArray['downloadTotal']);
+        $total = $beamArray['downloadTotal'];
     }
 
     return array(

@@ -67,6 +67,9 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
     // Temporary save the parent of the record to beam (item for a file).
     private $_required_beam = null;
 
+    // Use to save upload progress and main beam info to display.
+    private $session;
+
     public function setBeam($recordType, $recordId)
     {
         $this->record_type = inflector::camelize($recordType);
@@ -320,7 +323,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             } catch (Exception_BeamInternetArchiveConnection $e) {
                 // The remote id will be set during job.
                 $message = __('Failed to set remote identifier (bucket) for %s #%d: %s.', $this->record_type, $this->record_id, $e->getMessage());
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $this->_log($message, Zend_Log::WARN);
                 return '';
             }
         }
@@ -343,7 +346,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         if ($isUsed === null) {
             $this->remote_id = '';
             $this->save();
-            throw new Exception_BeamInternetArchiveConnection(__('Cannot check if bucket "%s" exists already.', $remoteId));
+            throw new Exception_BeamInternetArchiveConnection(__('Cannot check if bucket "%s" exists already', $remoteId));
         }
 
         // Append a serial if this remote id is used.
@@ -354,7 +357,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
                 if ($result === null) {
                     $this->remote_id = '';
                     $this->save();
-                    throw new Exception_BeamInternetArchiveConnection(__('Cannot check if bucket "%s" exists already.', $remoteId));
+                    throw new Exception_BeamInternetArchiveConnection(__('Cannot check if bucket "%s" exists already', $remoteId));
                 }
             }
             $remoteId .= '_' . $i;
@@ -574,27 +577,41 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             return;
         }
 
-        $settings = fire_plugin_hook('beamia_set_settings', array(
-            'record_type' => $this->record_type,
-            'record_id' => $this->record_id,
-        ));
+        $record = $this->_getRecord();
 
-        // Base metadata of record.
-        if (!$settings) {
-            $record = $this->_getRecord();
+        // Default settings are Dublin Core metadata.
+        $settings = $this->_getMetadataForHeader('Dublin Core');
 
+        // Call hooks.
+        $args = array(
+            'settings' => &$settings,
+            'record' => $record,
+        );
+        $result = fire_plugin_hook('beamia_set_settings', &$args);
+
+        // Minimal metadata is a title, so we search for such a header.
+        $checkTitle = 0;
+        if ($settings) {
+            $checkTitle = count(array_filter($settings, 'self::_checkTitle'));
+        }
+        if ($checkTitle == 0) {
+            // Try to add a Dublin Core title.
             $title = metadata($record, array('Dublin Core', 'Title'));
-            if (!$title) {
-                $title = $this->record_type . ' #' . $this->record_id;
+            if ($title) {
+                $settings[] = 'x-archive-meta-title:' . $title;
             }
-            $settings[] = 'x-archive-meta-title:' . $title;
+            // Else add a generic title.
+            else {
+                $settings[] = 'x-archive-meta-title:' . $this->record_type . ' #' . $this->record_id;
+            }
+        }
 
-            if ($this->isBeamForItem() && !empty($record->collection_id)) {
-                $collection = get_record_by_id('collection', $record->collection_id);
-                $collectionTitle = metadata($collection, array('Dublin Core', 'Title'));
-                if ($collectionTitle) {
-                    $settings[] = 'x-archive-meta-collection:' . $collection;
-                }
+        // Add a collection if it is not set.
+        if ($this->isBeamForItem() && !empty($record->collection_id)) {
+            $collection = get_record_by_id('collection', $record->collection_id);
+            $collectionTitle = metadata($collection, array('Dublin Core', 'Title'));
+            if ($collectionTitle) {
+                $settings[] = 'x-archive-meta-collection:' . $collection;
             }
         }
 
@@ -602,6 +619,61 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         $settings[] = 'x-archive-meta-mediatype:' . $this->_getMediaType();
 
         return $settings;
+    }
+
+    /**
+     * Return formatted array of metadata to use for headers.
+     *
+     * @param string $elementSetName Restrict metadata to this element set.
+     *
+     * @return array of strings used for headers.
+     */
+    private function _getMetadataForHeader($elementSetName)
+    {
+        $record = $this->_getRecord();
+        $settings = array();
+
+        // Add existing elements.
+        $options = array(
+            'show_empty_elements' => false,
+            'return_type' => 'array',
+        );
+        if ($elementSetName) {
+            $options['show_element_sets'] = $elementSetName;
+        }
+        $metadata = all_element_texts($record, $options);
+
+        // Don't add "Dublin Core" in the header, because this is the standard 
+        // on Internet Archive.
+        $cleanElementSetName = ($elementSetName == 'Dublin Core') ?
+            '' :
+            preg_replace('#[^a-z0-9]+#', '-', strtolower($elementSetName)) . '-';
+
+        foreach ($metadata[$elementSetName] as $element => $texts) {
+            // Replace unique or serie of non-alphanumeric character by "-".
+            $meta = preg_replace('#[^a-z0-9]+#', '-', strtolower($element));
+            foreach ($texts as $key => $text) {
+                $base = (count($texts) == 1) ?
+                    'x-archive-meta-' :
+                    'x-archive-meta' . sprintf('%02d', $key) . '-';
+                $settings[] = $base . $cleanElementSetName . $meta . ':' . $text;
+            }
+
+            // Add default title if it exists. If none, a generic name will be
+            // added automatically.
+            if ($element == 'Title') {
+                $settings[] = 'x-archive-meta-title:' . $texts[0];
+            }
+        }
+
+        return $settings;
+    }
+
+    /**
+     * Callback function used to check if a title is set in headers.
+     */
+    private static function _checkTitle($value) {
+        return (strpos($value, 'x-archive-meta-title:') === 0);
     }
 
     /**
@@ -1070,12 +1142,15 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         }
 
         $this->remote_metadata = json_decode($remoteMetadata);
+        if ($this->process == self::PROCESS_COMPLETED) {
+            $this->_removeSession();
+        }
 
         if (isset($this->remote_metadata->error)) {
             if ($this->process != self::PROCESS_FAILED_RECORD) {
                 $this->setProcess(self::PROCESS_FAILED_RECORD);
                 $message = __('Error during creation of bucket for %s #%d: %s.', $this->record_type, $this->record_id, $this->remote_metadata->error);
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $this->_log($message, Zend_Log::WARN);
             }
             $this->save();
             return true;
@@ -1085,7 +1160,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             // Because the bucket is created, we can queue the metadata of item.
             $this->setProcess(self::PROCESS_QUEUED);
             $message = __('Bucket fully created for %s #%d.', $this->record_type, $this->record_id);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $this->_log($message, Zend_Log::INFO);
             $this->save();
             return true;
         }
@@ -1093,7 +1168,8 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         if ($this->process == self::PROCESS_IN_PROGRESS_WAITING_REMOTE) {
             $this->setProcess(self::PROCESS_COMPLETED);
             $message = __('Finished operation "%s" for %s #%d.', $this->status, $this->record_type, $this->record_id);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $this->_log($message, Zend_Log::INFO);
+            $this->_removeSession();
             $this->save();
             return true;
         }
@@ -1153,7 +1229,8 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
                 if ($this->process == self::PROCESS_IN_PROGRESS_WAITING_REMOTE) {
                     $this->setProcess(self::PROCESS_COMPLETED);
                     $message = __('Finished operation "%s" for %s #%d.', $this->status, $this->record_type, $this->record_id);
-                    _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                    $this->_log($message, Zend_Log::WARN);
+                    $this->_removeSession();
                 }
                 $this->save();
                 return true;
@@ -1162,10 +1239,12 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
 
         // Not found in the list of files of the bucket.
         if ($this->status == self::STATUS_TO_REMOVE && $this->process == self::PROCESS_IN_PROGRESS_WAITING_REMOTE) {
-            $this->setProcess(self::PROCESS_COMPLETED);
+            $this->saveWithProcess(self::PROCESS_COMPLETED);
             $this->remote_metadata = null;
             $message = __('Finished operation "%s" for %s #%d.', $this->status, $this->record_type, $this->record_id);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $this->_log($message, Zend_Log::WARN);
+            $this->_removeSession();
+            return true;
         }
 
         $this->save();
@@ -1311,5 +1390,44 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         $string = preg_replace('#\&[^;]+\;#', '_', $string);
         $string = preg_replace('/[^[:alnum:]\(\)\[\]_\-\.#~@+:]/', '_', $string);
         return preg_replace('/_+/', '_', $string);
+    }
+
+    /**
+     * Helper to set log and session message.
+     */
+    private function _log($message, $level)
+    {
+        _log(__('Beam me up to Internet Archive: %s', $message), $level);
+
+        if (is_null($this->id)) {
+            return;
+        }
+
+        $result = $this->_getSession();
+        $this->session->beams[$this->id]['message'][date('Y-m-d G:i:s')] = '[' . $level . ']: ' . $message;
+        $this->session->beams[$this->id]['level'] = $level;
+    }
+
+    /**
+     * Helper to remove a session for a record.
+     */
+    private function _removeSession()
+    {
+        if (is_null($this->id)) {
+            return;
+        }
+
+        $result = $this->_getSession();
+        if (isset($this->session->beams[$this->id])) {
+            unset($this->session->beams[$this->id]);
+        }
+    }
+
+    private function _getSession()
+    {
+        if (is_null($this->session)) {
+            $this->session = new Zend_Session_Namespace('BeamMeUpToInternetArchive');
+        }
+        return $this->session;
     }
 }

@@ -119,15 +119,15 @@ echo pagination_links();
                 <?php } ?>
             <td><?php echo ($beam->isPublic() ? __('Public') : __('Private')); ?></td>
             <td><?php echo ($beam->hasUrl()) ?
-                        link_to_beamia_remote_if_any(__($beam->status), array(), $beam) :
+                        beamia_link_to_remote_if_any(__($beam->status), array(), $beam) :
                         __($beam->status);
             ?></td>
             <td><?php echo ($beam->hasUrl()) ?
-                        link_to_beamia_tasks_if_any(__($beam->process), array(), $beam) :
+                        beamia_link_to_tasks_if_any(__($beam->process), array(), $beam) :
                         __($beam->process);
                     $progressInfo = beamia_getProgress($beam);
                     if (!empty($progressInfo) && $progressInfo['total'] > 0) {
-                        echo '/' . __('Progress: %d of %d bytes.', $progressInfo['progress'], $progressInfo['total']);
+                        echo '<div class="progress">' . __('Progress: %d%% of %d bytes.', $progressInfo['progress'], $progressInfo['total']) . '</div>';
                     }
             ?></td>
             <td><?php echo ($beam->isRemoteChecked() ? $beam->remote_checked : __('N/A')); ?></td>

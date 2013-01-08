@@ -9,18 +9,23 @@
  */
 class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 {
+    // Use to save upload progress and main beam info to display.
     private $session;
 
+    // Use to save all beams to process.
     private $_beams = array();
     // Beam for current record.
     private $_beam;
     private $_record;
     private $_required_beam;
 
+    // Use to save curl handlers and file pointers
+    private $_ressources = array();
+
     public function perform()
     {
-        // Prepare and manage beam me up session in order to keep info on curls.
-        $this->session = (object) array('curls' => array());
+        // Prepare and manage beam me up session in order to keep info on curls. 
+        $this->session = new Zend_Session_Namespace('BeamMeUpToInternetArchive');
 
         // Get records to process and order items before their attached files.
         $this->_prepareListOfQueuedBeams();
@@ -67,32 +72,30 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         // In fact, the multihandler can't return without success.
 
         // Check individual results and remove the handles.
-        foreach ($this->session->curls as $key => $curlArray) {
-            $curl = $curlArray['handler'];
+        foreach ($this->_ressources as $beamId => $ressource) {
+            $curl = $ressource['curlHandler'];
             $curlInfo = curl_getinfo($curl);
+            $beam = $this->_beams[$beamId];
 
             // Because it's not a bucket, there is no problem to set error and
             // to relaunch process later, so check is basic.
             // Curl error.
             if (curl_errno($curl)) {
-                $beam = $this->_beams[$key];
                 $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION);
                 $message = __('Connection error #%d (%s) when processing "%s" for %s #%d.', curl_errno($curl), curl_error($curl), $beam->status, $beam->record_type, $beam->record_id);
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $this->_log($message, Zend_Log::WARN, $beamId);
             }
             // Http error.
             elseif ($curlInfo['http_code'] != 200) {
-                $beam = $this->_beams[$key];
                 $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION);
                 $message = __('Connection error with http code #%d when processing "%s" for %s #%d.', $curlInfo['http_code'], $beam->status, $beam->record_type, $beam->record_id);
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $this->_log($message, Zend_Log::WARN, $beamId);
             }
             // Success.
             else {
-                $beam = $this->_beams[$key];
                 $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_IN_PROGRESS_WAITING_REMOTE);
                 $message = __('Finishing processing %s #%d. Waiting remote status.', $beam->record_type, $beam->record_id);
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $this->_log($message, Zend_Log::INFO, $beamId);
             }
 
             curl_multi_remove_handle($curlMultiHandle, $curl);
@@ -106,9 +109,6 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
             $this->_beam = $beam;
             $this->_closeCurlForRecord();
             $beam->checkRemoteStatus();
-            if (isset($this->session->curls[$beamId])) {
-                unset($this->session->curls[$beamId]);
-            }
         }
 
         return JOB_QUEUE_STATUS_SUCCESS;
@@ -142,8 +142,6 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 
         // Lock records to beam and save keyed array.
         foreach ($beams as $beam) {
-            $message = __('%s #%d is queued and process "%s" is in progress.', $beam->record_type, $beam->record_id, $beam->status);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
             // Status "Waiting bucket" can be changed only when the bucket is
             // created.
             if ($beam->process != BeamInternetArchiveRecord::PROCESS_QUEUED_WAITING_BUCKET) {
@@ -151,6 +149,9 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
             }
 
             $this->_beams[$beam->id] = $beam;
+
+            $message = __('%s #%d is queued and process "%s" is in progress.', $beam->record_type, $beam->record_id, $beam->status);
+            $this->_log($message, Zend_Log::INFO, $beam->id);
         }
     }
 
@@ -167,7 +168,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         $beam = $this->_beam;
 
         $message = __('Starting to create bucket for %s #%d.', $beam->record_type, $beam->record_id);
-        _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+        $this->_log($message, Zend_Log::INFO, $beam->id);
 
         // Check remote id. It's important, because some time can happen between
         // the preparation of the record to beam up and the true upload and we
@@ -177,8 +178,8 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         if (empty($beam->remote_id)) {
             $this->_closeCurlForRecord();
             $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION);
-            $message = __('Failed to create bucket for %s #%d: %s', $beam->record_type, $beam->record_id, (isset($beam->remote_metadata->error) ? $beam->remote_metadata->error : __('Bucket without identifier.')));
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $message = __('Failed to create bucket for %s #%d: %s.', $beam->record_type, $beam->record_id, (isset($beam->remote_metadata->error) ? $beam->remote_metadata->error : __('Bucket without identifier.')));
+            $this->_log($message, Zend_Log::WARN, $beam->id);
             return false;
         }
 
@@ -228,8 +229,8 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 
             if (!$flagSuccess) {
                 $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION);
-                $message = __('Failed to create bucket for %s #%d: %s', $beam->record_type, $beam->record_id, $e->getMessage());
-                _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                $message = __('Failed to create bucket for %s #%d: %s.', $beam->record_type, $beam->record_id, $e->getMessage());
+                $this->_log($message, Zend_Log::WARN, $beam->id);
                 return false;
             }
         }
@@ -240,7 +241,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         $beam->remote_checked = date('Y-m-d G:i:s');
         $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_QUEUED_WAITING_BUCKET);
         $message = __('Succesful creation of bucket for %s #%d. Waiting remote status for it.', $beam->record_type, $beam->record_id);
-        _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+        $this->_log($message, Zend_Log::NOTICE, $beam->id);
 
         return true;
     }
@@ -276,7 +277,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
                 $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_QUEUED_WAITING_BUCKET);
             }
             $message = __('Process "%s" failed for %s #%d: bucket is not ready.', $beam->status, $beam->record_type, $beam->record_id);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $this->_log($message, Zend_Log::NOTICE, $beam->id);
             return false;
         }
 
@@ -291,13 +292,13 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         if ($beam->hasPendingTasks() && $beam->isToUpdateOrToRemove()) {
             $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_QUEUED);
             $message = __('Process is postponed for %s #%d: tasks are pending.', $beam->record_type, $beam->record_id);
-            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+            $this->_log($message, Zend_Log::NOTICE, $beam->id);
             return false;
         }
 
         // Bucket is ready, so process file.
         $message = __('Starting process "%s" for %s #%d.', $beam->status, $beam->record_type, $beam->record_id);
-        _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+        $this->_log($message, Zend_Log::INFO, $beam->id);
 
         // Prepare content to be uploaded from the record.
         $record = get_record_by_id($beam->record_type, $beam->record_id);
@@ -323,31 +324,34 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
                 switch ($beam->record_type) {
                     case BeamInternetArchiveRecord::RECORD_TYPE_ITEM:
                         // Prepare content to be uploaded. Content are metadata of item.
-                        $content = all_element_texts($record, array('show_empty_elements' => true));
+                        $content = all_element_texts($record, array(
+                            'show_empty_elements' => true,
+                            'return_type' => 'html',
+                        ));
                         try {
-                            $this->session->curls[$beam->id]['filePointer'] = $this->_prepareFileFromString($content);
+                            $this->_ressources[$beam->id]['filePointer'] = $this->_prepareFileFromString($content);
                         } catch (Exception_BeamInternetArchiveConnection $e) {
                             $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_CONNECTION);
                             $message = __('Process "%s" failed for %s #%d: %s.', $beam->status, $beam->record_type, $beam->record_id, $e->getMessage());
-                            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                            $this->_log($message, Zend_Log::WARN, $beam->id);
                             $this->_closeCurlForRecord();
                             return false;
                         }
-                        curl_setopt($curl, CURLOPT_INFILE, $this->session->curls[$beam->id]['filePointer']);
+                        curl_setopt($curl, CURLOPT_INFILE, $this->_ressources[$beam->id]['filePointer']);
                         curl_setopt($curl, CURLOPT_INFILESIZE, strlen($content));
                         $content = null;
                         break;
                     case BeamInternetArchiveRecord::RECORD_TYPE_FILE:
                         try {
-                            $this->session->curls[$beam->id]['filePointer'] = fopen(FILES_DIR . '/original/' . $record->filename, 'r');
+                            $this->_ressources[$beam->id]['filePointer'] = fopen(FILES_DIR . '/original/' . $record->filename, 'r');
                         } catch (Exception $e) {
                             $beam->saveWithProcess(BeamInternetArchiveRecord::PROCESS_FAILED_RECORD);
                             $message = __('Process "%s" failed for %s #%d: %s.', $beam->status, $beam->record_type, $beam->record_id, $e->getMessage());
-                            _log(__('Beam me up to Internet Archive: %s', $message), Zend_Log::WARN);
+                            $this->_log($message, Zend_Log::WARN, $beam->id);
                             $this->_closeCurlForRecord();
                             return false;
                         }
-                        curl_setopt($curl, CURLOPT_INFILE, $this->session->curls[$beam->id]['filePointer']);
+                        curl_setopt($curl, CURLOPT_INFILE, $this->_ressources[$beam->id]['filePointer']);
                         curl_setopt($curl, CURLOPT_INFILESIZE, $record->size);
                         break;
                 }
@@ -355,14 +359,14 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
 
             case BeamInternetArchiveRecord::STATUS_TO_REMOVE:
                 // Use an empty file in order to be able to do a put.
-                $this->session->curls[$beam->id]['filePointer'] = fopen('/dev/null', 'r');
+                $this->_ressources[$beam->id]['filePointer'] = fopen('/dev/null', 'r');
 
                 // Prepare generic metadata.
                 $httpHeader = array();
                 $httpHeader[] = 'authorization: LOW ' . get_option('beamia_S3_access_key') . ':' . get_option('beamia_S3_secret_key');
                 $httpHeader[] = 'x-archive-cascade-delete:1';
                 curl_setopt($curl, CURLOPT_CUSTOMREQUEST, 'DELETE');
-                curl_setopt($curl, CURLOPT_INFILE, $this->session->curls[$beam->id]['filePointer']);
+                curl_setopt($curl, CURLOPT_INFILE, $this->_ressources[$beam->id]['filePointer']);
                 curl_setopt($curl, CURLOPT_INFILESIZE, 0);
                 break;
         }
@@ -415,21 +419,29 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         // No session management for single curl since it uses only with bucket,
         // which is a zero lenght request.
         if ($mode == 'multiple') {
-            $this->session->curls[$beamId]['handler'] = $curl;
+            $this->_ressources[$beamId]['curlHandler'] = $curl;
             // The normal function works for a single curl, but not for a multi
             // one (need the curl identifier).
             // curl_setopt($curl, CURLOPT_PROGRESSFUNCTION, array(__CLASS__, '_curlProgressInfo'));
             // curl_setopt($curl, CURLOPT_PROGRESSFUNCTION, __CLASS__ . '::_curlProgressInfo');
             curl_setopt($curl, CURLOPT_NOPROGRESS, false);
-            curl_setopt($curl, CURLOPT_BUFFERSIZE, 128);
-            $this->_define_progress_callback($beamId);
+            curl_setopt($curl, CURLOPT_BUFFERSIZE, 1024);
+            $this->_define_progress_callback($curl, $beamId);
+            // Reset session progress.
+            if (isset($this->session->beams[$beamId]['finish'])) {
+                unset($this->session->beams[$beamId]['downloadTotal']);
+                unset($this->session->beams[$beamId]['downloadNow']);
+                unset($this->session->beams[$beamId]['uploadTotal']);
+                unset($this->session->beams[$beamId]['uploadNow']);
+                unset($this->session->beams[$beamId]['finish']);
+            }
         }
 
         return $curl;
     }
 
     /**
-     * Close a curl handler and remove it from session.
+     * Close a curl handler and remove it from ressources.
      *
      * @return void.
      */
@@ -437,12 +449,12 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
     {
         $beamId = $this->_beam->id;
 
-        if (isset($this->session->curls[$beamId])) {
-            if (isset($this->session->curls[$beamId]['handler'])) {
-                @curl_close($this->session->curls[$beamId]['handler']);
+        if (isset($this->_ressources[$beamId])) {
+            if (isset($this->_ressources[$beamId]['curlHandler'])) {
+                @curl_close($this->_ressources[$beamId]['curlHandler']);
             }
-            if (isset($this->session->curls[$beamId]['filePointer'])) {
-                @fclose($this->session->curls[$beamId]['filePointer']);
+            if (isset($this->_ressources[$beamId]['filePointer'])) {
+                @fclose($this->_ressources[$beamId]['filePointer']);
             }
         }
     }
@@ -473,37 +485,37 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
      * Add handle for to curl multi object.
      *
      * @param $curlMultiHandle pointer to multi curl multi handle that will be added to
-     * @param $curl single curl handle to add
+     * @param $curlHandler single curl handle to add
      *
      * @return $curl the object for curl_multi_remove_handle
      */
-    private function _addHandle(&$curlMultiHandle, $curl)
+    private function _addHandle(&$curlMultiHandle, $curlHandler)
     {
-        curl_multi_add_handle($curlMultiHandle, $curl);
-        return $curl;
+        curl_multi_add_handle($curlMultiHandle, $curlHandler);
+        return $curlHandler;
     }
 
     /**
      * Execute PUT method against remote server.
      *
-     * @param ressource $curl Curl handle to execute.
+     * @param ressource $curlHandler Curl handle to execute.
      *
      * @return curl info if success or throw error message.
      */
-    private function _execSingleHandle($curl)
+    private function _execSingleHandle($curlHandler)
     {
-        $result = curl_exec($curl);
-        $httpCode = curl_getinfo($curl, CURLINFO_HTTP_CODE);
+        $result = curl_exec($curlHandler);
+        $httpCode = curl_getinfo($curlHandler, CURLINFO_HTTP_CODE);
         if ($result === false) {
             throw new Exception_BeamInternetArchiveConnection(__('Upload returns error: no connection.'), 1);
         }
-        if (curl_errno($curl)) {
-            throw new Exception_BeamInternetArchiveConnection(__('Upload returns error #%d (%s).', curl_errno($curl), curl_error($curl)), 2);
+        if (curl_errno($curlHandler)) {
+            throw new Exception_BeamInternetArchiveConnection(__('Upload returns error #%d (%s).', curl_errno($curlHandler), curl_error($curlHandler)), 2);
         }
         if ($httpCode != 200) {
             throw new Exception_BeamInternetArchiveConnection(__('Unable to upload item (error http #%d). Check your proxy or your server.', $httpCode), 3);
         }
-        return curl_getinfo($curl);
+        return curl_getinfo($curlHandler);
     }
 
     /**
@@ -530,24 +542,44 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         }
     }
 
-    private function _define_progress_callback($i)
+    /**
+     * Save info about a curl process into the session and check killing.
+     *
+     * This function can manage multi curls.
+     * @see http://pastebin.com/9YytCX9P
+     * 
+     * @return curl command (0 to continue).
+     */
+    private function _define_progress_callback($curlHandler, $beamId)
     {
-        $finished = false;
-        curl_setopt($_SESSION['BeamUploadInternetArchive']['curls'][$i], CURLOPT_PROGRESSFUNCTION, function ($a=0, $b=0, $c=0, $d=0) use ($i, &$finished) {
-            $this->session->curls[$i]['downloadTotal'] = $a;
-            $this->session->curls[$i]['downloadNow'] = $b;
-            $this->session->curls[$i]['uploadTotal'] = $c;
-            $this->session->curls[$i]['uploadNow'] = $d;
-            $this->session->curls[$i]['finished'] = $finished;
-            if (!$finished
-                    && (($a > 0 && $b == $a)
-                    || ($c > 0 && $d == $c)
-                    || ($a + $c == 0)
-                )) {
-                /* Put here the code to execute every time that a download finishes */
-                $finished = true;
+        $finish = 0;
+        curl_setopt($curlHandler, CURLOPT_PROGRESSFUNCTION,
+            // Don't use context here. 
+            function ($a = 0, $b = 0, $c = 0, $d = 0) use($beamId, &$finish) {
+                if ($finish == 0 && (($a > 0 && $b == $a) || ($c > 0 && $d == $c) || ($a + $c == 0))) {
+                    /* Put here the code to execute every time that a download finishes */
+                    $finish = 1;
+                }
+                $session = new Zend_Session_Namespace('BeamMeUpToInternetArchive');
+                $session->beams[$beamId]['downloadTotal'] = $a;
+                $session->beams[$beamId]['downloadNow'] = $b;
+                $session->beams[$beamId]['uploadTotal'] = $c;
+                $session->beams[$beamId]['uploadNow'] = $d;
+                $session->beams[$beamId]['finish'] = $finish;
+                return 0;
             }
-            return 0;
-        });
+        );
+    }
+
+    /**
+     * Helper to set log and session message.
+     */
+    private function _log($message, $level, $beamId = 0)
+    {
+        _log(__('Beam me up to Internet Archive: %s', $message), $level);
+        if ($beamId != 0) {
+            $this->session->beams[$beamId]['message'][date('Y-m-d G:i:s')] = '[' . $level . ']: ' . $message;
+            $this->session->beams[$beamId]['level'] = $level;
+        }
     }
 }

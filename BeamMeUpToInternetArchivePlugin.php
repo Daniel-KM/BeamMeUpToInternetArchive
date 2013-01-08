@@ -37,8 +37,8 @@
  * @todo Individual beam me up when editing file (currently only in main view).
  * done Beam controller.
  * @todo Beam builder (from Beam model).
- * @todo Curl object builder (or use Zend http?).
- * @todo Beam as a mixin of item and file.
+ * @todo Curl object builder (or use Zend http?)?
+ * @todo Beam as a mixin of item and file?
  * @todo Follow percent of progress when uploading records (via session).
  * nottodo Save direct url to file in database [no: use /download/ path].
  * done Merge settings and remote_metadata columns in one metadata column
@@ -50,7 +50,7 @@
  *   (not to do because beams are created at any time).
  * done Optimize remote checking.
  * @todo Check https base url.
- * @todo Session progress.
+ * @todo Replace file_get_contents by curl (quicker and error management).
  */
 
 require_once dirname(__FILE__) . '/helpers/BeamMeUpToInternetArchiveFunctions.php';
@@ -328,13 +328,13 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $item = $args['item'];
 
         $output = '';
-        $output .= '<div class="info panel">';
-        $output .= '<h4>Beam me up to Internet Archive</h4>';
-        $output .= '<h5>Status of item</h5>';
+        $output .= '<div class="info panel">' . PHP_EOL;
+        $output .= '<h4>Beam me up to Internet Archive</h4>' . PHP_EOL;
+        $output .= '<h5>Status of item</h5>' . PHP_EOL;
         $output .= $this->_listInternetArchiveLinks($item, true);
-        $output .= '<h5>Status of files</h5>';
+        $output .= '<h5>Status of files</h5>' . PHP_EOL;
         $output .= $this->_listInternetArchiveLinksForFiles($item);
-        $output .= '</div>';
+        $output .= '</div>' . PHP_EOL;
 
         echo $output;
         return $output;
@@ -349,10 +349,10 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $file = $args['file'];
 
         $output = '';
-        $output .= '<div class="info panel">';
-        $output .= '<h4>Beam me up to Internet Archive</h4>';
+        $output .= '<div class="info panel">' . PHP_EOL;
+        $output .= '<h4>Beam me up to Internet Archive</h4>' . PHP_EOL;
         $output .= $this->_listInternetArchiveLinks($file, true);
-        $output .= '</div>';
+        $output .= '</div>' . PHP_EOL;
 
         echo $output;
         return $output;
@@ -365,29 +365,29 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
      */
     public function hookAdminItemsFormFiles($args) {
         $output = '';
-        $output .= '<div class="field">';
-        $output .=   '<div id="BeamiaPostToInternetArchive_label" class="one columns alpha">';
+        $output .= '<div class="field">' . PHP_EOL;
+        $output .= '  <div id="BeamiaPostToInternetArchive_label" class="one columns alpha">';
         $output .=     get_view()->formLabel('BeamiaPostToInternetArchive', __('Upload to Internet Archive'));
-        $output .=   '</div>';
-        $output .=   '<div class="inputs">';
+        $output .= '  </div>' . PHP_EOL;
+        $output .= '  <div class="inputs">' . PHP_EOL;
         $output .=     get_view()->formCheckbox('BeamiaPostToInternetArchive', true, array('checked' => (boolean) get_option('beamia_post_to_internet_archive')));
-        $output .=     '<p class="explanation">';
+        $output .= '    <p class="explanation">';
         $output .=       __('Note that if this box is checked, saving the item may take a while.');
-        $output .=     '</p>';
-        $output .=   '</div>';
-        $output .= '</div>';
+        $output .=     '</p>' . PHP_EOL;
+        $output .= '  </div>' . PHP_EOL;
+        $output .= '</div>' . PHP_EOL;
 
-        $output .= '<div class="field">';
-        $output .=   '<div id="BeamiaIndexAtInternetArchive_label" class="one columns alpha">';
+        $output .= '<div class="field">' . PHP_EOL;
+        $output .= '  <div id="BeamiaIndexAtInternetArchive_label" class="one columns alpha">';
         $output .=     get_view()->formLabel('BeamiaIndexAtInternetArchive', __('Index at Internet Archive'));
-        $output .=   '</div>';
-        $output .=   '<div class="inputs">';
+        $output .= '  </div>' . PHP_EOL;
+        $output .= '  <div class="inputs">' . PHP_EOL;
         $output .=     get_view()->formCheckbox('BeamiaIndexAtInternetArchive', true, array('checked' => (boolean) get_option('beamia_index_at_internet_archive')));
-        $output .=     '<p class="explanation">';
+        $output .= '    <p class="explanation">';
         $output .=       __("If you index your items, they will appear on the results of search engines such as Google's.");
-        $output .=     '</p>';
-        $output .=   '</div>';
-        $output .= '</div>';
+        $output .=     '</p>' . PHP_EOL;
+        $output .= '  </div>' . PHP_EOL;
+        $output .= '</div>' . PHP_EOL;
 
         echo $output;
         return $output;
@@ -404,7 +404,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $nav[] = array(
             'label' => __('Internet Archive'),
             // TODO Currently, need to set the full url in order to get the good
-            // link_to_beamia() in browse view (else, the controller name is not
+            // beamia_link_to() in browse view (else, the controller name is not
             // added to the url).
             'uri' => url('beam-me-up-to-internet-archive/index/browse'),
             'resource' => 'BeamMeUpToInternetArchive_Index',
@@ -435,12 +435,11 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
 
         $output = '';
 
-        $output .= '<div>' . __("If the box at the bottom of the files tab is checked, the files in this item, along with their metadata, will upload to the Internet Archive upon save.") . '</div>' . "<br />\n";
-        $output .= '<div>' . __("Note that BeamMeUp may make saving an item take a while, and that it may take additional time for the Internet Archive to post the files after you save.") . '</div>' . "<br />\n";
-        $output .= '<div>' . __("To change the upload default or to alter the upload's configuration, visit the plugin's configuration settings on this site.") . '</div>' . "<br />\n";
-
+        $output .= '<div>' . __("If the box at the bottom of the files tab is checked, the files in this item, along with their metadata, will upload to the Internet Archive upon save.") . '</div><br />' . PHP_EOL;
+        $output .= '<div>' . __("Note that BeamMeUp may make saving an item take a while, and that it may take additional time for the Internet Archive to post the files after you save.") . '</div><br />' . PHP_EOL;
+        $output .= '<div>' . __("To change the upload default or to alter the upload's configuration, visit the plugin's configuration settings on this site.") . '</div><br />' . PHP_EOL;
         if (metadata($item, 'id') == '') {
-            $output .= '<div>' . __('Please revisit this tab after you save the item to view its Internet Archive links.') . '</div>' . "<br />\n";
+            $output .= '<div>' . __('Please revisit this tab after you save the item to view its Internet Archive links.') . '</div><br />' . PHP_EOL;
         }
         else {
             $output .= $this->_listInternetArchiveLinks($item, true);
@@ -473,28 +472,28 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $pendingTasks = $beam->hasPendingTasks();
 
         $output = '';
-        $output .= '<div id="beam-list">';
-        $output .= '<ul>';
+        $output .= '<div id="beam-list">' . PHP_EOL;
+        $output .= '  <ul>' . PHP_EOL;
         if ($beam->hasUrl()) {
-            $output .= '<li>' . __('Status') . ': ' . link_to_beamia_remote_if_any(__($beam->status), array(), $beam) . '</a>' . '</li>';
-            $output .= '<li>' . __('Process') . ': <a href="' . $beam->getUrlForTasks() . '" target="_blank">' . __($beam->process) . '</a>';
+            $output .= '    <li>' . __('Status') . ': ' . beamia_link_to_remote_if_any(__($beam->status), array(), $beam) . '</a>' . '</li>' . PHP_EOL;
+            $output .= '    <li>' . __('Process') . ': <a href="' . $beam->getUrlForTasks() . '" target="_blank">' . __($beam->process) . '</a>';
             $output .= ' (' . (!empty($pendingTasks) ? __('%d pending tasks', $pendingTasks) : __('No pending tasks')) . ')';
-            $output .= '</li>';
+            $output .= '</li>' . PHP_EOL;
         }
         else {
-            $output .= '<li>' . __('Status') . ': ' . __($beam->status) . '</li>';
-            $output .= '<li>' . __('Process') . ': ' . __($beam->process) . '</li>';
+            $output .= '    <li>' . __('Status') . ': ' . __($beam->status) . '</li>' . PHP_EOL;
+            $output .= '    <li>' . __('Process') . ': ' . __($beam->process) . '</li>' . PHP_EOL;
         }
 
         $progressInfo = beamia_getProgress($beam);
         if (!empty($progressInfo) && $progressInfo['total'] > 0) {
-            $output .= '<li>' . __('Progress: %d of %d bytes.', $progressInfo['progress'], $progressInfo['total']) . '</li>';
+            $output .= '    <li>' . __('Progress: %d%% of %d bytes.', $progressInfo['progress'], $progressInfo['total']) . '</li>' . PHP_EOL;
         }
 
         $output .= beamia_listActions($beam);
 
-        $output .= '</ul>';
-        $output .= '</div>';
+        $output .= '  </ul>' . PHP_EOL;
+        $output .= '</div>' . PHP_EOL;
 
         return $output;
     }
@@ -513,11 +512,11 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output = '';
 
         if (!metadata($item, 'has files')) {
-            $output .= '<div id="beam-list">';
-            $output .= '<ul>';
-            $output .= '<li>' . __('No files') . '</li>';
-            $output .= '</ul>';
-            $output .= '</div>';
+            $output .= '<div id="beam-list">' . PHP_EOL;
+            $output .= '<ul>' . PHP_EOL;
+            $output .= '<li>' . __('No files') . '</li>' . PHP_EOL;
+            $output .= '</ul>' . PHP_EOL;
+            $output .= '</div>' . PHP_EOL;
             return $output;
         }
 
@@ -525,17 +524,17 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $beamItem->checkRemoteStatusForFilesOfItem();
         $files = $item->getFiles();
 
-        $output .= '<div id="beam-files-list">';
-        $output .= '<ul>';
+        $output .= '<div id="beam-files-list">' . PHP_EOL;
+        $output .= '<ul>' . PHP_EOL;
         foreach ($files as $file) {
             $beam = $this->_getBeamForRecord($file);
             $output .= '<li>';
-            $output .= link_to_file_show(array('class'=>'show', 'title'=>__('View File Metadata')), null, $file) . ': ';
+            $output .= link_to_file_show(array('class'=>'show', 'title'=>__('View File Metadata')), null, $file) . ': ' . PHP_EOL;
             $output .= $this->_listInternetArchiveLinks($file, false);
-            $output .= '</li>';
+            $output .= '</li>' . PHP_EOL;
         }
-        $output .= '</ul>';
-        $output .= '</div>';
+        $output .= '</ul>' . PHP_EOL;
+        $output .= '</div>' . PHP_EOL;
 
         return $output;
     }
