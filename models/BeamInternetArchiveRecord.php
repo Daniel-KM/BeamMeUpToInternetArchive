@@ -250,7 +250,6 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             return;
         }
 
-
         // For all other process status, set it directly. Job is queued even if
         // bucket is not ready. Job will manage it.
         $this->status = $status;
@@ -590,20 +589,17 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         $result = fire_plugin_hook('beamia_set_settings', &$args);
 
         // Minimal metadata is a title, so we search for such a header.
-        $checkTitle = 0;
-        if ($settings) {
-            $checkTitle = count(array_filter($settings, 'self::_checkTitle'));
-        }
+        $checkTitle = empty($settings) ?
+            0 :
+            count(array_filter($settings, 'self::_checkTitle'));
         if ($checkTitle == 0) {
             // Try to add a Dublin Core title.
             $title = metadata($record, array('Dublin Core', 'Title'));
-            if ($title) {
-                $settings[] = 'x-archive-meta-title:' . $title;
-            }
             // Else add a generic title.
-            else {
-                $settings[] = 'x-archive-meta-title:' . $this->record_type . ' #' . $this->record_id;
+            if (empty($title)) {
+                $title = $this->record_type . ' #' . $this->record_id;
             }
+            $settings[] = 'x-archive-meta-title:' . $title;
         }
 
         // Add a collection if it is not set.
@@ -641,7 +637,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         if ($elementSetName) {
             $options['show_element_sets'] = $elementSetName;
         }
-        $metadata = all_element_texts($record, $options);
+        $elementTexts = all_element_texts($record, $options);
 
         // Don't add "Dublin Core" in the header, because this is the standard 
         // on Internet Archive.
@@ -649,7 +645,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             '' :
             preg_replace('#[^a-z0-9]+#', '-', strtolower($elementSetName)) . '-';
 
-        foreach ($metadata[$elementSetName] as $element => $texts) {
+        foreach ($elementTexts[$elementSetName] as $element => $texts) {
             // Replace unique or serie of non-alphanumeric character by "-".
             $meta = preg_replace('#[^a-z0-9]+#', '-', strtolower($element));
             foreach ($texts as $key => $text) {

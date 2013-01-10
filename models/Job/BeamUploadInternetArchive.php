@@ -62,7 +62,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
         // Avoid some useless tasks.
         if (count($this->_beams) == 0) {
             curl_multi_close($curlMultiHandle);
-            return JOB_QUEUE_STATUS_SUCCESS;
+            return;
         }
 
         // Launch multihandle with all curls.
@@ -111,7 +111,7 @@ class Job_BeamUploadInternetArchive extends Omeka_Job_AbstractJob
             $beam->checkRemoteStatus();
         }
 
-        return JOB_QUEUE_STATUS_SUCCESS;
+        return;
     }
 
     /**

@@ -78,7 +78,7 @@
         <?php echo get_view()->formText('BeamiaMediaType', get_option('beamia_media_type'), null);?>
         <p class="explanation">
             <?php echo __('Ask the Internet Archive what do put here. They will tell you what to enter here when you get your collection.');
-            echo ' ' . __('Again, they would love to hear from you so please contact them.') . "<br />\n";
+            echo ' ' . __('Again, they would love to hear from you so please contact them.') . '<br />' . PHP_EOL;
             echo __('Main types are: "texts", "movies", "audio" and "education".');?>
         </p>
     </div>

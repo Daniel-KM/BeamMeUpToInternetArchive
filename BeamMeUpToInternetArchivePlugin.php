@@ -51,6 +51,7 @@
  * done Optimize remote checking.
  * @todo Check https base url.
  * @todo Replace file_get_contents by curl (quicker and error management).
+ * @todo Add an option to get all metadata for header.
  */
 
 require_once dirname(__FILE__) . '/helpers/BeamMeUpToInternetArchiveFunctions.php';
@@ -269,7 +270,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     {
         $post = $args['post'];
         $item = $args['record'];
-        $options = array();
+        $options = array('beams' => array());
 
         // Create beam records even if the item and files are not uploaded.
         if ($args['insert']) {
