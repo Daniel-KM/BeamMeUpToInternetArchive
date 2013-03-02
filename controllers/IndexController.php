@@ -26,6 +26,9 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
      */
     public function browseAction()
     {
+        // Status can be changed only if an account is configured.
+        $result = $this->_warnAccountConfiguration();
+
         if (!$this->_getParam('sort_field')) {
             $this->_setParam('sort_field', 'id');
             $this->_setParam('sort_dir', 'd');
@@ -51,7 +54,7 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
     {
         //Retrieve the number from the options table
         $options = $this->getFrontController()->getParam('bootstrap')
-                          ->getResource('Options');
+                        ->getResource('Options');
 
         if (is_admin_theme()) {
             $perPage = (int) $options['per_page_admin'];
@@ -94,6 +97,12 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
             throw new Omeka_Controller_Exception_404;
         }
 
+        // Status can be changed only if an account is configured.
+        if ($this->_warnAccountConfiguration()) {
+            $this->_helper->redirector->goto('browse');
+            return;
+        }
+
         if (!$beam->hasRecord() && $status != BeamInternetArchiveRecord::STATUS_TO_REMOVE) {
             $message = __('%s #%d is deleted from the base. You can only remove it.', $beam->record_type, $beam->record_id);
             $message = __('Beam me up to Internet Archive: %s', $message);
@@ -128,6 +137,12 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
      */
     public function batchEditAction()
     {
+        // Status can be changed only if an account is configured.
+        if ($this->_warnAccountConfiguration()) {
+            $this->_helper->redirector->goto('browse');
+            return;
+        }
+
         $beamIds = $this->_getParam('beams');
         if (empty($beamIds)) {
             $this->_helper->flashMessenger(__('You must choose some records to batch process them.'), 'error');
@@ -176,6 +191,12 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
      */
     public function batchQueueAction()
     {
+        // Status can be changed only if an account is configured.
+        if ($this->_warnAccountConfiguration()) {
+            $this->_helper->redirector->goto('browse');
+            return;
+        }
+
         // Process queued records.
         if ($this->_getParam('submit-batch-queue')) {
             // TODO Complete params with sort.
@@ -320,6 +341,12 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
      * Prepare and send job if possible.
      */
     private function _prepareJob() {
+        // Status can be changed only if an account is configured.
+        if ($this->_warnAccountConfiguration()) {
+            $this->_helper->redirector->goto('browse');
+            return;
+        }
+
         if (count($this->_beams) == 0) {
             $message = __('No beam record to process.');
             $message = __('Beam me up to Internet Archive: %s', $message);
@@ -346,6 +373,21 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
         else {
             $jobDispatcher->setQueueName('beamia_uploads');
             $jobDispatcher->send('Job_BeamUploadInternetArchive', $options);
+        }
+    }
+
+    /**
+     * Set a message when the account is not configured.
+     *
+     * @return boolean.
+     */
+    private function _warnAccountConfiguration()
+    {
+        if (!(boolean) get_option('beamia_account_checked')) {
+            $message = __('Your account is not configured. Item and files cannot be beamed up or updated.');
+            $message = __('Beam me up to Internet Archive: %s', $message);
+            $this->_helper->flashMessenger($message, 'error');
+            return true;
         }
     }
 }

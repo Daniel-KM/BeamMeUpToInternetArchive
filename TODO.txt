@@ -1,0 +1,22 @@
+TODO for "Beam me up to Internet Archive" (plugin for Omeka)
+============================================================
+
+* Individual select for files of an item when editing item.
+* Individual beam me up when editing file (currently only in main view).
+* Beam builder (from Beam model).
+* Curl object builder (or use Zend http?)?
+* Beam as a mixin of item and file?
+* Follow percent of progress when uploading records (via session).
+* Add beams search filters for a better status view.
+* Check https base url.
+* Replace file_get_contents by curl (quicker and error management).
+* Add an option to get all metadata for header.
+
+
+Not to do
+---------
+
+* Save direct url to file in database [no: use /download/ path].
+* Add a check for all files and items that haven't a matching beam
+   (Currently, this is automatically done when displaying an item or a file).
+   (Not to do because beams are created at any time).

@@ -4,54 +4,11 @@
  *
  * @see README.md
  *
- * @copyright Daniel Berthereau for Pop Up Archive, 2012
+ * @copyright Daniel Berthereau for Pop Up Archive, 2012-2013
  * @copyright Daniel Vizzini and Dave Lester for Pop Up Archive, 2012
  * @license http://www.cecill.info/licences/Licence_CeCILL_V2-en.txt
  * @license http://www.gnu.org/licenses/gpl-3.0.txt
  * @package BeamMeUpToInternetArchive
- *
- * This is a development version.
- *
- * * Things to do to finish the plugin:
- * done Replace most of throw exceptions by logs.
- * done Full check of upload progress.
- * done Update sent status of files (every time an item or a file is displayed).
- * done Relaunch processes if failed or not sent (not automatically in order
- *   to allow checks).
- * done Check if pbcore metadata are used (hook).
- * done Change echo by return.
- *
- * * Things to do to improve plugin:
- * done Check files with the same original name (flat directory on IA).
- * done Check item name for bucket (should be unique, else it's updated).
- * done Manage update of item and files.
- * done Manage deletion of item and files.
- * done Make job to use queued beams in table if there are no direct job.
- * done Status page of all files and items.
- * done Improve after save hook in order to not use post.
- * done Finish to clean indexController and javascripts, copy of
- *   ItemsController and associated scripts.
- *
- * * Less important, just for better MVC or ergonomy.
- * @todo Individual select for files of an item when editing item.
- * @todo Individual beam me up when editing file (currently only in main view).
- * done Beam controller.
- * @todo Beam builder (from Beam model).
- * @todo Curl object builder (or use Zend http?)?
- * @todo Beam as a mixin of item and file?
- * @todo Follow percent of progress when uploading records (via session).
- * nottodo Save direct url to file in database [no: use /download/ path].
- * done Merge settings and remote_metadata columns in one metadata column
- *   (settings removed).
- * done Change local status and remote status into status / process.
- * @todo Add beams search filters for a better status view.
- * nottodo Add a check for all files and items that haven't a matching beam
- *   (currently, this is automatically done when displaying an item or a file).
- *   (not to do because beams are created at any time).
- * done Optimize remote checking.
- * @todo Check https base url.
- * @todo Replace file_get_contents by curl (quicker and error management).
- * @todo Add an option to get all metadata for header.
  */
 
 require_once dirname(__FILE__) . '/helpers/BeamMeUpToInternetArchiveFunctions.php';
@@ -238,6 +195,8 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     /**
      * Saves plugin configuration.
      *
+     * @todo Improve check of account.
+     *
      * @return void
      */
     public function hookConfig($args)
@@ -255,6 +214,11 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         set_option('beamia_max_time_to_check_bucket', (int) $post['BeamiaMaxTimeToCheckBucket']);
         set_option('beamia_min_time_before_new_check', (int) $post['BeamiaMinTimeBeforeNewCheck']);
         set_option('beamia_max_simultaneous_process', (int) $post['beamiaMaxSimultaneousProcess']);
+
+        $BeamiaS3AccessKey = get_option('beamia_S3_access_key');
+        $BeamiaS3SecretKey = get_option('beamia_S3_secret_key');
+        $BeamiaAccountChecked = (strlen($BeamiaS3AccessKey) == 16 && strlen($BeamiaS3SecretKey) == 16);
+        set_option('beamia_account_checked', (int) $BeamiaAccountChecked);
     }
 
     /**
@@ -277,8 +241,20 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
             $beamItem = new BeamInternetArchiveRecord;
             $beamItem->setBeamForItem($item->id);
             if ($post['BeamiaPostToInternetArchive'] == 1) {
-                $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
-                $options['beams'][$beamItem->id] = $beamItem->id;
+                if ((boolean) get_option('beamia_account_checked')) {
+                    $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+                    $options['beams'][$beamItem->id] = $beamItem->id;
+                }
+                else {
+                    $warn = new Omeka_Controller_Action_Helper_FlashMessenger;
+                    $message = __('Your account is not configured. Item and files cannot be beamed up or updated.');
+                    $message = __('Beam me up to Internet Archive: %s', $message);
+                    $warn->addMessage($message, 'alert');
+                    $beamItem->save();
+                }
+            }
+            else {
+                $beamItem->save();
             }
 
             $files = $item->getFiles();
@@ -286,13 +262,33 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
                 $beam = new BeamInternetArchiveRecord;
                 $beam->setBeamForFile($file->id);
                 if ($post['BeamiaPostToInternetArchive'] == 1) {
-                    $beam->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
-                    $options['beams'][$beam->id] = $beam->id;
+                    if ((boolean) get_option('beamia_account_checked')) {
+                        $beam->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_BEAM_UP);
+                        $options['beams'][$beam->id] = $beam->id;
+                    }
+                    else {
+                        $warn = new Omeka_Controller_Action_Helper_FlashMessenger;
+                        $message = __('Your account is not configured. Item and files cannot be beamed up or updated.');
+                        $message = __('Beam me up to Internet Archive: %s', $message);
+                        $warn->addMessage($message, 'alert');
+                        $beam->save();
+                    }
+                }
+                else {
+                    $beam->save();
                 }
             }
         }
         // Update or remove (see status).
         else {
+            if (!(boolean) get_option('beamia_account_checked')) {
+                $warn = new Omeka_Controller_Action_Helper_FlashMessenger;
+                $message = __('Your account is not configured. Item and files cannot be beamed up or updated.');
+                $message = __('Beam me up to Internet Archive: %s', $message);
+                $warn->addMessage($message, 'error');
+                return;
+            }
+
             $beamItem = $this->_getBeamForRecord($item);
             // TODO Currently, change of status is not managed here.
             $beamItem->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_UPDATE);
@@ -331,6 +327,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output = '';
         $output .= '<div class="info panel">' . PHP_EOL;
         $output .= '<h4>Beam me up to Internet Archive</h4>' . PHP_EOL;
+        $output .= $this->_warnAccountConfiguration();
         $output .= '<h5>Status of item</h5>' . PHP_EOL;
         $output .= $this->_listInternetArchiveLinks($item, true);
         $output .= '<h5>Status of files</h5>' . PHP_EOL;
@@ -352,6 +349,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output = '';
         $output .= '<div class="info panel">' . PHP_EOL;
         $output .= '<h4>Beam me up to Internet Archive</h4>' . PHP_EOL;
+        $output .= $this->_warnAccountConfiguration();
         $output .= $this->_listInternetArchiveLinks($file, true);
         $output .= '</div>' . PHP_EOL;
 
@@ -365,6 +363,12 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
      * @return void
      */
     public function hookAdminItemsFormFiles($args) {
+        $warn = $this->_warnAccountConfiguration();
+        if ($warn != '') {
+            echo $warn;
+            return $warn;
+        }
+
         $output = '';
         $output .= '<div class="field">' . PHP_EOL;
         $output .= '  <div id="BeamiaPostToInternetArchive_label" class="one columns alpha">';
@@ -426,6 +430,27 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     }
 
     /**
+     * Set a message when the account is not configured.
+     *
+     * @return string.
+     */
+    private function _warnAccountConfiguration()
+    {
+        $output = '';
+
+        if (!(boolean) get_option('beamia_account_checked')) {
+            $output .= '<div class="field">' . PHP_EOL;
+            $output .= '    <p class="explanation">';
+            $output .=       '<strong>' . __('Warning:') . '</strong>' . ' ';
+            $output .=       __('Your account is not configured. Item and files cannot be beamed up or updated.');
+            $output .=     '</p>' . PHP_EOL;
+            $output .= '</div>' . PHP_EOL;
+        }
+
+        return $output;
+    }
+
+    /**
      * Each time we save an item, post it to the Internet Archive.
      *
      * @return void
@@ -439,6 +464,7 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $output .= '<div>' . __("If the box at the bottom of the files tab is checked, the files in this item, along with their metadata, will upload to the Internet Archive upon save.") . '</div><br />' . PHP_EOL;
         $output .= '<div>' . __("Note that BeamMeUp may make saving an item take a while, and that it may take additional time for the Internet Archive to post the files after you save.") . '</div><br />' . PHP_EOL;
         $output .= '<div>' . __("To change the upload default or to alter the upload's configuration, visit the plugin's configuration settings on this site.") . '</div><br />' . PHP_EOL;
+        $output .= $this->_warnAccountConfiguration();
         if (metadata($item, 'id') == '') {
             $output .= '<div>' . __('Please revisit this tab after you save the item to view its Internet Archive links.') . '</div><br />' . PHP_EOL;
         }

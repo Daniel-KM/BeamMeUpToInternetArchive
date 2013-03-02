@@ -128,6 +128,20 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
      */
     public function setStatus($status)
     {
+        // Status can be changed only if an account is configured.
+        if (!$this->_isAccountConfigured()) {
+            // We cannot be here via the UI, so checks are minimal.
+            if ($this->status != self::STATUS_NOT_TO_BEAM_UP
+                    || $status != self::STATUS_NOT_TO_BEAM_UP
+                ) {
+                $warn = new Omeka_Controller_Action_Helper_FlashMessenger;
+                $message = __('Your account is not configured. Item and files cannot be beamed up or updated.');
+                $message = __('Beam me up to Internet Archive: %s', $message);
+                $warn->addMessage($message, 'alert');
+            }
+            return;
+        }
+
         // Special case according to process.
         // If we wait the bucket creation, don't change anything.
         // It's just a problem of time, because this status is set only if the
@@ -924,12 +938,26 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
     }
 
     /**
+     * Indicate if the account is configured to avoid useless checks.
+     *
+     * @return boolean.
+     */
+    private function _isAccountConfigured()
+    {
+        return (boolean) get_option('beamia_account_checked');
+    }
+
+    /**
      * Indicate if the remote server is checkable according to status of record.
      *
      * @return boolean.
      */
     public function isRemoteCheckable()
     {
+        if (!$this->_isAccountConfigured()) {
+            return false;
+        }
+
         // Check status.
         switch ($this->status) {
             case self::STATUS_NOT_TO_BEAM_UP:
@@ -955,6 +983,10 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
      */
     public function isRemoteChecked()
     {
+        if (!$this->_isAccountConfigured()) {
+            return false;
+        }
+
         return ($this->remote_checked != '0000-00-00 00:00:00');
     }
 
@@ -971,6 +1003,10 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
      */
     public function isBucketReady()
     {
+        if (!$this->_isAccountConfigured()) {
+            return false;
+        }
+
         switch ($this->record_type) {
             case self::RECORD_TYPE_ITEM:
                 break;
@@ -1041,7 +1077,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
         } catch (Exception_BeamInternetArchiveRecord $e) {
             _log($e->getMessage(), Zend_Log::WARN);
             return false;
-        } catch (Exceptstrtotimeion_BeamInternetArchiveConnection $e) {
+        } catch (Exception_BeamInternetArchiveConnection $e) {
             _log($e->getMessage(), Zend_Log::WARN);
             return false;
         }

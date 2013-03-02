@@ -175,23 +175,24 @@ Contact
 Current maintainers:
 
 * Daniel Berthereau (see [Daniel-KM][6])
-* Daniel Vizzini (see [DVizzini][7])
 
-This plugin has been built and updated for [Pop Up Archive][8].
+This plugin has been built and updated for [Pop Up Archive][7].
 
 
 Copyright
 ---------
 
-* Copyright Daniel Vizzini for Pop Up Archive, 2012
-* Copyright Daniel Berthereau for Pop Up Archive, 2012
+* Copyright Dave Lester for Pop Up Archive, 2012 (see [Dave Lester][8])
+* Copyright Daniel Vizzini for Pop Up Archive, 2012 (see [DVizzini][9])
+* Copyright Daniel Berthereau for Pop Up Archive, 2012-2013
 
 
-[1]: http://www.omeka.org "Omeka.org"
-[2]: http://archive.org "Internet Archive"
+[1]: https://omeka.org "Omeka.org"
+[2]: https://archive.org "Internet Archive"
 [3]: https://github.com/popuparchive/BeamMeUpToInternetArchive/Issues "GitHub BeamMeUpToInternetArchive"
-[4]: http://www.cecill.info/licences/Licence_CeCILL_V2-en.html "CeCILL"
+[4]: https://www.cecill.info/licences/Licence_CeCILL_V2-en.html "CeCILL"
 [5]: https://www.gnu.org/licenses/gpl-3.0.html "GNU/GPL"
-[6]: http://github.com/Daniel-KM "Daniel Berthereau"
-[7]: http://github.com/dvizzini "Daniel Vizzini"
-[8]: http://popuparchive.org/ "Pop Up Archive"
+[6]: https://github.com/Daniel-KM "Daniel Berthereau"
+[7]: http://popuparchive.org/ "Pop Up Archive"
+[8]: https://github.com/davelester "Dave Lester"
+[9]: https://github.com/dvizzini "Daniel Vizzini"
