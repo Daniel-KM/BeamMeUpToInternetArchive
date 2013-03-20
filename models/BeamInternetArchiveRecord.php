@@ -600,7 +600,7 @@ class BeamInternetArchiveRecord extends Omeka_Record_AbstractRecord
             'settings' => &$settings,
             'record' => $record,
         );
-        $result = fire_plugin_hook('beamia_set_settings', &$args);
+        $result = fire_plugin_hook('beamia_set_settings', $args);
 
         // Minimal metadata is a title, so we search for such a header.
         $checkTitle = empty($settings) ?
