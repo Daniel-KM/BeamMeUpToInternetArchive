@@ -6,8 +6,7 @@ This is but one plugin of two in active developement:
 * Beam me up to Internet Archive
 * Beam me up to SoundCloud
 
-
-Pop-up Radio
+Pop Up Archive
 ------------
 
 Omeka is an open-source framework designed for organizations such as libraries,
@@ -18,9 +17,7 @@ on server space provided by popular vendors such as Dreamhost. The considerable
 expertise needed for deployment on a server with root access, such as those
 provided by Amazon Web Services’ Elastic Cloud Computing, is not required.
 
-Omeka is the Wordpress of web-based archival software. Its tools may not be
-state-of-the-art, but it fulfills a critical need in lowering the bar for
-deployment. The hottest Silicon Valley start-ups have trouble finding capable
+The hottest Silicon Valley start-ups have trouble finding capable
 systems engineers to manage their servers. Not-for-profits do not have the
 resources to attract such talent. They need Omeka.
 
@@ -28,25 +25,24 @@ In addition to its ease of deployment, Omeka has several other advantages. It
 has a paid staff out of George Mason University that develop and maintain its
 core. Like any good open source project, it also has a large and active
 community of volunteer developers. Omeka provides the architecture to enable
-such developers (including the Pop-up Radio Archive) to expand Omeka’s
+such developers (including the Pop Up Archive) to expand Omeka’s
 functionality through plugins.
 
-The issues with Omeka are two-fold. From an archival standpoint, the server that
-hosts Omeka and its data is typically rented space in the cloud. A change in
-credit card number can delete this data. From an outreach standpoint, making the
-front-end to an Omeka-powered website is difficult, and these sites are often
-lightly trafficked.
+From an archival standpoint, the server that hosts Omeka and its data is typically 
+rented space in the cloud. A change in credit card number can delete this data. 
+From an outreach standpoint, making the front-end to an Omeka-powered website requires resources, 
+and these sites are often lightly trafficked.
 
-The Pop-up Radio Project addresses these issues by getting the content in an
-Omeka database off of Omeka. For posterity, this data is sent to the Internet
+The Pop Up Project addresses these issues by getting the content in an
+Omeka database outside the user's server. For posterity, this data is sent to the Internet
 Archive, whose job is to store digital media in perpetuity. For accessibility,
 the data is sent to SoundCloud, an audio repository with a superb interface and
 skyrocketing popularity.
 
 To do so, two plugins have been developed: one for the Internet Archive and the
-other for SoundCloud. Omeka is a middle man. It already has the code necessary
+other for SoundCloud. Omeka already has the code necessary
 to get data from a local machine (e.g. a radio producer’s laptop) to its
-database. The Pop-up Radio plugins provide the cURL code to get the data from
+database. The Pop Up Archive plugins provide the cURL code to get the data from
 its database to more accessible, better maintained third parties.
 
 
@@ -54,7 +50,7 @@ Technical Components
 --------------------
 
 Passing the data to these third parties is easier said than done. Below is a
-synopsis of the technical components that Pop-up Radio has used to do so.
+synopsis of the technical components that Pop Up Archive has used to do so.
 
 ### cURL
 Both plugins are, at their core, cURL scripts. cURL is an open-source
@@ -105,13 +101,13 @@ non-uploaded files, can be run from this same page.
 Installation
 ------------
 
-Uncompress files and rename plugin folder "BeamMeUpToInternetArchive".
+Uncompress files and rename plugin folder "BeamMeUpToSoundCloud".
 
 Then install it like any other Omeka plugin and follow the config instructions.
 
-Note that you need to apply for a free account on [Internet Archive][2] and
-to create a collection (or to use the collection "test_collection").
+Note that you need to apply for a free account on [SoundCloud][2].
 
+This plugin uses [php-soundcloud][3], an api designed to connect to SoundCloud.
 
 Warning
 -------
@@ -124,7 +120,7 @@ It's always recommended to backup your database so you can roll back if needed.
 Troubleshooting
 ---------------
 
-See online issues on [GitHub][3].
+See online issues on [GitHub][4].
 
 
 License
@@ -132,7 +128,7 @@ License
 
 This plugin is published with a double licence:
 
-### [CeCILL][4]
+### [CeCILL][5]
 
 In consideration of access to the source code and the rights to copy,
 modify and redistribute granted by the license, users are provided only
@@ -152,7 +148,7 @@ security. This Agreement may be freely reproduced and published,
 provided it is not altered, and that no provisions are either added or
 removed herefrom.
 
-### [GNU/GPL][5]
+### [GNU/GPL][6]
 
 This program is free software; you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free Software
@@ -168,6 +164,8 @@ You should have received a copy of the GNU General Public License along with
 this program; if not, write to the Free Software Foundation, Inc.,
 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 
+
+### The [php-soundcloud][3] library is published under [MIT licence][7].
 
 Contact
 -------
