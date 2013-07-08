@@ -27,12 +27,10 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
     protected $_hooks = array(
         'install',
         'uninstall',
-        'admin_append_to_plugin_uninstall_message',
         'define_acl',
         'config_form',
         'config',
         'after_save_item',
-        'admin_theme_header',
         'admin_items_show_sidebar',
         'admin_items_form_files',
         'admin_files_show_sidebar',
@@ -90,16 +88,6 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         $this->_db->query($sql);
 
         $this->_uninstallOptions();
-    }
-
-    /**
-     * Warns before the uninstallation of the plugin.
-     */
-    public static function hookAdminAppendToPluginUninstallMessage()
-    {
-        return '<p><strong>' . __('Warning') . '</strong>:<br />'
-        . __('You will lost all links between your Omeka items and items beamed up to Internet Archive.') . '<br />'
-        . __('Uploaded files will continue to be available as currently on Internet Archive.') . '</p>';
     }
 
     /**
@@ -307,13 +295,6 @@ class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin
         if (count($options['beams']) > 0) {
             $this->_prepareJob($options);
         }
-    }
-
-    /**
-     * Adds theme header.
-     */
-    public function hookAdminThemeHeader($request)
-    {
     }
 
     /**

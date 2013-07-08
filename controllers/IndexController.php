@@ -284,7 +284,7 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
     private function _getBeamForRecord($record)
     {
         // Check if a beam exists for this record.
-        $beam = $this->_db->getTable('BeamInternetArchiveRecord')->findByRecordTypeAndRecordId(get_class($record), $record->id);
+        $beam = get_db()->getTable('BeamInternetArchiveRecord')->findByRecordTypeAndRecordId(get_class($record), $record->id);
 
         // If no beam is found, set default record for item.
         if (empty($beam)) {
@@ -327,7 +327,7 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
                 // Remove all files attached to item if needed.
                 if ($beam->isBeamForItem()) {
                     // Warning: don't use item->getFiles(), because item may be deleted.
-                    $beamFiles = $this->_db->getTable('BeamInternetArchiveRecord')->findBeamsOfFilesByItemId($beam->record_id);
+                    $beamFiles = get_db()->getTable('BeamInternetArchiveRecord')->findBeamsOfFilesByItemId($beam->record_id);
                     foreach ($beamFiles as $key => $beamFile) {
                         $beamFile->saveWithStatus(BeamInternetArchiveRecord::STATUS_TO_REMOVE);
                         $this->_beams[$beamFile->id] = $beamFile->id;
