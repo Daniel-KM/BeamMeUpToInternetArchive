@@ -27,7 +27,7 @@ echo pagination_links();
     <?php echo common('quick-filters', array(), 'index'); ?>
 
     <?php if ($total_results): ?>
-    <table id="items" cellspacing="0" cellpadding="0">
+    <table id="items">
     <thead>
         <tr>
             <th class="batch-edit-heading"><?php echo __('Select'); ?></th>

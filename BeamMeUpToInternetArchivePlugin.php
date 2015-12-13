@@ -1,22 +1,20 @@
 <?php
 /**
- * Posts items to the Internet Archive as they are saved.
+ * Beam Me Up to Internet Archive
  *
- * @see README.md
+ * Posts items to the Internet Archive as they are saved.
  *
  * @copyright Daniel Berthereau for Pop Up Archive, 2012-2013
  * @copyright Daniel Vizzini and Dave Lester for Pop Up Archive, 2012
- * @license http://www.cecill.info/licences/Licence_CeCILL_V2-en.txt
+ * @license http://www.cecill.info/licences/Licence_CeCILL_V2.1-en.txt
  * @license http://www.gnu.org/licenses/gpl-3.0.txt
- * @package BeamMeUpToInternetArchive
  */
 
 require_once dirname(__FILE__) . '/helpers/BeamMeUpToInternetArchiveFunctions.php';
 
 /**
- * Contains code used to integrate the plugin into Omeka.
- *
- * @package BeamMeUpToInternetArchive
+ * The Beam Me Up to Internet Archive plugin.
+ * @package Omeka\Plugins\BeamMeUpToInternetArchive
  */
 
 class BeamMeUpToInternetArchivePlugin extends Omeka_Plugin_AbstractPlugin

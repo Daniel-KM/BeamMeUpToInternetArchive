@@ -238,7 +238,8 @@ class BeamMeUpToInternetArchive_IndexController extends Omeka_Controller_Abstrac
         $baseUrl = $this->getRequest()->getBaseUrl().'/index/browse/';
         $request = Zend_Controller_Front::getInstance()->getRequest();
         $requestArray = $request->getParams();
-        if($currentPage = $this->current) {
+        $currentPage = $this->current;
+        if ($currentPage ) {
             $paginationUrl = $baseUrl.$currentPage;
         } else {
             $paginationUrl = $baseUrl;

@@ -209,7 +209,7 @@ class Table_BeamInternetArchiveRecord extends Omeka_Db_Table
             'items.item_type_id = item_types.id',
             array());
 
-        if ($type instanceof Type) {
+        if ($type instanceof ItemType) {
             $select->where('item_types.id = ?', $type->id);
         } else if (is_numeric($type)) {
             $select->where('item_types.id = ?', $type);
